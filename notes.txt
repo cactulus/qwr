@@ -1,0 +1,84 @@
+qwr notes
+
+use "base"; // single line comment
+
+/* multi
+line
+comment */
+
+Weekdays :: enum {
+	MONDAY,
+	TUESDAY,
+	WEDNESDAY
+}
+
+Box :: struct {
+	a: i32,
+	b: i32
+}
+
+Person :: struct {
+	name: *i8,
+	age: i32,
+	fav_day: i32
+}
+
+extern test :: (fmt: *i8, ..) ();
+
+const SIX = 6;
+
+add :: (a: i32, b: i32) i32 {
+	return a + b;
+}
+
+// mandatory main function
+main :: () i32 {
+	let a = 20; // infer type
+	let b: i32 = 10; // specify type
+	let c = add(5, 1);
+
+	let d = &c;
+	let e = *d;
+
+	lol := 12931;
+	
+	a += 5;
+	
+	let box: Box;
+	box.a = 10;
+	box.b = 20;
+
+	printf("Box %d %d\n", box.a, box.b);
+
+	let box2: Box = {5, 2}; // init
+
+	printf("Box2 %d %d\n", box2.a, box2.b);
+	
+	let peter = new Person; // dynamically allocate memory 
+	peter.name = "Peter";
+	peter.age = 19;
+	peter.fav_day = TUESDAY;
+
+	printf("Person: '%s' %d %d\n", peter.name, peter.age, peter.fav_day);
+
+	free(peter); // free allocated memory
+
+	let arr: [4]i32 = {2, 3, 4, 6};
+	let arr2 = {2, 3, 4, 6, 7, 8, 9, 10, 11, 12, 13}; // type does not have to be specified
+
+	let ind = 5;
+	
+	while (ind--) {
+		printf("%d\n", arr2[ind]);
+	}
+
+	for i in 0..11 {
+		if i % 2 == 0 && i != 7 {
+			printf("%d\n", arr2[i]);
+		} else {
+			printf("X: %d\n", *(arr2+i));
+		}
+	}
+
+	return 0;
+}
