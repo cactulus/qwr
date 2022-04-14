@@ -21,6 +21,11 @@ enum QBaseType {
 	TYPE_INT16,
 	TYPE_INT32,
 	TYPE_INT64,
+	TYPE_UINT8,
+	TYPE_UINT16,
+	TYPE_UINT32,
+	TYPE_UINT64,
+	TYPE_BOOL,
 };
 
 struct QType {
@@ -29,7 +34,9 @@ struct QType {
 	llvm::Type *llvm_type;
 
 	bool isint();
+	bool isuint();
 	bool ispointer();
+    bool isbool();
 };
 
 struct Typer {

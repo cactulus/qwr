@@ -233,9 +233,13 @@ QType *Parser::parse_variable_definition_base(Token *name_token, u8 flags, Stmt 
 }
 
 Stmt *Parser::parse_return() {
-	auto val = parse_expr();
-
-	eat_semicolon();
+    Expr *val;
+    if (eat_token_if(';')) {
+        val = 0;
+    } else {
+        val = parse_expr();
+    	eat_semicolon();
+    }
 
 	auto stmt = make_stmt(RETURN);
 	stmt->return_value = val;
@@ -419,7 +423,7 @@ Expr *Parser::parse_primary() {
 	if (tok->type == TOKEN_INT_LIT) {
 		lexer.eat_token();
 		
-		auto expr = make_expr(INT_LIT, typer->get("i32"));
+		auto expr = make_expr(INT_LIT, typer->get("s32"));
         expr->int_value = tok->int_value;
 
         return expr;
@@ -428,7 +432,7 @@ Expr *Parser::parse_primary() {
     if (tok->type == TOKEN_STRING_LIT) {
 		lexer.eat_token();
 		
-		auto expr = make_expr(STRING_LIT, typer->make_pointer(typer->get("i8")));
+		auto expr = make_expr(STRING_LIT, typer->make_pointer(typer->get("u8")));
         expr->string_lit = tok->lexeme;
 
         return expr;
@@ -463,6 +467,18 @@ Expr *Parser::parse_primary() {
 
 		return expr;
 	}
+
+	if (eat_token_if(TOKEN_TRUE)) {
+	    auto expr = make_expr(INT_LIT, typer->get("bool"));
+	    expr->int_value = 1;
+	    return expr;
+    }
+
+	if (eat_token_if(TOKEN_FALSE)) {
+	    auto expr = make_expr(INT_LIT, typer->get("bool"));
+	    expr->int_value = 0;
+	    return expr;
+    }
 
 	messenger->report_print_token(tok, "Unexpected token");
 	return 0;

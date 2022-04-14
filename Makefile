@@ -8,7 +8,7 @@ DEPS := $(SRCS:%.cpp=%.d)
 LLVM_CONFIG:=llvm-config
 CXXFLAGS := -std=c++20 -O3 -DDIAGNOSTICS
 
-CXX = g++
+CXX = clang++
 
 LIBS := $(shell $(LLVM_CONFIG) --system-libs --ldflags --cxxflags --libs all)
 

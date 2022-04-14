@@ -25,6 +25,8 @@ const std::unordered_map<std::string, TokenType> keyword_tokens = {
 	{"return", TOKEN_RETURN},
 	{"extern", TOKEN_EXTERN},
 	{"as", TOKEN_AS},
+	{"true", TOKEN_TRUE},
+	{"false", TOKEN_FALSE},
 };
 
 const std::unordered_map<std::string, TokenType> two_char_tokens = {
@@ -232,10 +234,10 @@ bool is_not_quote(char c) {
 }
 
 char *escape_str_lit(char *text) {
-    int sl = strlen(text), nl = sl - 2, i;
+    int sl = strlen(text), nl = sl, i;
     char *etext;
 
-    for (i = 1; i < sl - 2; ++i) {
+    for (i = 0; i < sl; ++i) {
         if (text[i] != '\\') continue;
 
         switch (text[i+1]) {
@@ -251,24 +253,24 @@ char *escape_str_lit(char *text) {
     }
 
     etext = new char [nl];
-    for (i = 1; i < sl - 1; ++i) {
+    for (i = 0; i < sl; ++i) {
         if (text[i] != '\\') {
-            etext[i-1] = text[i]; 
+            etext[i] = text[i]; 
             continue;
         }
 
         switch (text[i+1]) {
             case 'n':
-                etext[i-1] = '\n';
+                etext[i] = '\n';
                 break;
             case 'r':
-                etext[i-1] = '\t';
+                etext[i] = '\t';
                 break;
             case 't':
-                etext[i-1] = '\r';
+                etext[i] = '\r';
                 break;
             case '0':
-                etext[i-1] = '\0';
+                etext[i] = '\0';
                 break;
             default:
                 break;

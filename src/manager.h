@@ -6,6 +6,9 @@
 #include "gen.h"
 #include "parser.h"
 
+const u8 COMPILE_ONLY = 0x1;
+const u8 OPTIMIZE = 0x2;
+
 struct Manager {
 	CodeGenerator code_gen;
 	Messenger messenger;
@@ -14,7 +17,7 @@ struct Manager {
 
 	void init();
 
-	void run(const char *src_file);
+	void run(const char *src_file, u8 flags);
 };
 
 #endif

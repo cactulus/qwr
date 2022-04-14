@@ -12,12 +12,10 @@ struct Manager;
 
 struct CodeGenerator {
 	Typer *typer;
+    llvm::TargetMachine *target_machine;
 	llvm::Module *llvm_module;
 	llvm::LLVMContext llvm_context;
-	llvm::TargetMachine *target_machine;
-	llvm::DataLayout *data_layout;
 	llvm::IRBuilder<> *builder;
-	const llvm::Target *target;
 
 	void init(Typer *_typer);
 
@@ -41,8 +39,10 @@ struct CodeGenerator {
 
 	llvm::Value *gen_expr_target(Expr *expr);
 
-	void output(char *obj_file);
+    void init_module();
+	void output(char *obj_file, u8 flags);
 	void link(char *obj_file, char *exe_file);
+	void optimize();
 	void dump();
 };
 

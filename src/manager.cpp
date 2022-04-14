@@ -22,14 +22,14 @@ void Manager::init() {
 	arena_init();
 }
 
-void Manager::run(const char *src_file) {
-    #ifdef DIAGNOSTICS
+void Manager::run(const char *src_file, u8 flags) {
+#ifdef DIAGNOSTICS
 	long long parse_time = 0;
 	long long llvm_time = 0;
 	long long link_time = 0;
 
 	auto total_start = TIMER_NOW;
-    #endif 
+#endif 
 
 	FILE *input_file = fopen(src_file, "r");
 	char *code;
@@ -42,45 +42,67 @@ void Manager::run(const char *src_file) {
 	Stmt *stmt;
 
 	while (true) {
-		#ifdef DIAGNOSTICS
+#ifdef DIAGNOSTICS
 		auto start = TIMER_NOW;
-		#endif
+#endif
 
 		stmt = parser.parse_top_level_stmt();
 		if (parser.has_reached_end) {
 			break;
 		}
 
-		#ifdef DIAGNOSTICS
+#ifdef DIAGNOSTICS
 		auto end = TIMER_NOW;
 		auto diff = TIMER_DIFF(start, end);
 		parse_time += diff;
 
 		start = TIMER_NOW;
-		#endif
+#endif
 
 		code_gen.gen_stmt(stmt);
 
-		#ifdef DIAGNOSTICS
+#ifdef DIAGNOSTICS
 		end = TIMER_NOW;
 		diff = TIMER_DIFF(start, end);
 
 		llvm_time += diff;
-		#endif 
+#endif 
 	}
-	char *obj_file = change_file_extension(src_file, ".o");
-	char *exe_file = change_file_extension(src_file, ".exe");
-	code_gen.output(obj_file);
+	const char *obj_ext;
+	const char *exe_ext;
+#ifdef _WIN32
+        obj_ext = ".obj";
+        exe_ext = ".exe";
+#else
+        obj_ext = ".o";
+        exe_ext = "";
+#endif
 
-	#ifdef DIAGNOSTICS
+#ifdef DIAGNOSTICS
 	auto start = TIMER_NOW;
-	#endif
-
-	code_gen.link(obj_file, exe_file);
-
-	#ifdef DIAGNOSTICS
+#endif
+	char *obj_file = change_file_extension(src_file, obj_ext);
+	char *exe_file = change_file_extension(src_file, exe_ext);
+	code_gen.output(obj_file, flags);
+    code_gen.dump();
+#ifdef DIAGNOSTICS
 	auto end = TIMER_NOW;
 	auto diff = TIMER_DIFF(start, end);
+
+	llvm_time += diff;
+#endif
+
+#ifdef DIAGNOSTICS
+	start = TIMER_NOW;
+#endif
+
+    if ((flags & COMPILE_ONLY) == 0) {
+	    code_gen.link(obj_file, exe_file);
+    }
+
+#ifdef DIAGNOSTICS
+	end = TIMER_NOW;
+	diff = TIMER_DIFF(start, end);
 	link_time = diff;
 
     auto total_end = std::chrono::steady_clock::now();
@@ -95,7 +117,7 @@ void Manager::run(const char *src_file) {
 	std::cout << "Parse time: " << (parse_time / 1000) << " ms\n";
 	std::cout << "LLVM time: " << (llvm_time / 1000) << " ms\n";
 	std::cout << "Link time: " << (link_time / 1000) << " ms\n";
-	#endif
+#endif
 }
 
 size_t read_entire_file(FILE *f, char **contents) {

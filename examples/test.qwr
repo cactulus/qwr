@@ -1,9 +1,16 @@
-extern printf :: (fmt: *i8, ..) i32;
+extern printf :: (fmt: *u8, ..) s32;
+
+print :: (v: int) {
+    printf("%d\n", v);
+}
+
+print :: (v: *u8) {
+    printf("%s\n", v);
+}
 
 main :: () int {
-    a := 20;
-
-    printf("%d\n", a);
+    print(20);
+    print("Hello World");
 
     return 0;
 }

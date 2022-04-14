@@ -8,6 +8,8 @@ const std::unordered_map<TokenType, std::string> keyword_tokens_names = {
 	{TOKEN_RETURN, "return"},
 	{TOKEN_EXTERN, "extern"},
 	{TOKEN_AS, "as"},
+	{TOKEN_TRUE, "true"},
+	{TOKEN_FALSE, "false"},
 };
 
 const std::unordered_map<TokenType, std::string> two_char_tokens_names = {
@@ -27,10 +29,8 @@ void Token::print() {
 		} break;
 		case TOKEN_ATOM: {
 			std::cout << "Atom '"
-					  << atom.name
-					  << "' ("
-					  << atom.len
-					  << ")\n";
+					  << lexeme
+					  << "'\n";
 		} break;
 		case TOKEN_INT_LIT: {
 			std::cout << "Int " << int_value << "\n";
