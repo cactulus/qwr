@@ -12,9 +12,9 @@ struct Manager {
 	Parser parser;
 	Typer typer;
 
-	void init(char *code, int code_len);
+	void init();
 
-	void run();
+	void run(const char *src_file);
 };
 
 #endif

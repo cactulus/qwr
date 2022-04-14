@@ -11,9 +11,13 @@
 static int read_xchars(Lexer *l, char **output, bool (*check) (char c));
 static void read_atom_or_keyword(Lexer *l, Token *t);
 static void read_int_lit(Lexer *l, Token *t);
+static void read_string_lit(Lexer *l, Token *t);
 
 static bool is_ident_char(char c);
 static bool is_digit(char c);
+static bool is_not_quote(char c);
+
+char *escape_str_lit(char *text);
 
 const char *operator_chars = "+-=*/();,.{}&|:";
 
@@ -71,10 +75,30 @@ void Lexer::eat_token() {
 
 Token *Lexer::read_token() {
 	auto c = peek_char();
+
 	while (isspace(c)) {
 		eat_char();
 		c = peek_char();
 	}
+
+    if (c == '/' && peek_char(1) == '/') {
+        while (c != '\n') {
+            eat_char();
+            c = peek_char();
+        }
+        eat_char();
+        return read_token();
+    }
+
+    if (c == '/' && peek_char(1) == '*') {
+        while (c != '*' || peek_char(1) != '/') {
+            eat_char();
+            c = peek_char();
+        }
+        eat_char();
+        eat_char();
+        return read_token();
+    }
 
 	auto t = create_token();
 	set_token_start(t);
@@ -85,6 +109,8 @@ Token *Lexer::read_token() {
 		read_atom_or_keyword(this, t);
 	} else if (is_digit(c)) {
 		read_int_lit(this, t);
+    } else if (c == '"') {
+        read_string_lit(this, t);
 	} else {
 		std::string possible_two_char_token = std::string(1, c) + peek_char(1);
 		auto two_char_token_it = two_char_tokens.find(possible_two_char_token);
@@ -164,15 +190,14 @@ int read_xchars(Lexer *l, char **output, bool (*check) (char c)) {
 
 void read_atom_or_keyword(Lexer *l, Token *t) {
 	char *lexeme;
-	int lexeme_len = read_xchars(l, &lexeme, is_ident_char);
+	read_xchars(l, &lexeme, is_ident_char);
 
 	auto it = keyword_tokens.find(std::string(lexeme));
 	if (it != keyword_tokens.end()) {
 		t->type = it->second;	
 	} else {
 		t->type = TOKEN_ATOM;
-		t->atom.name = lexeme;
-		t->atom.len = lexeme_len;
+		t->lexeme = lexeme;
 	}
 }
 
@@ -184,10 +209,72 @@ void read_int_lit(Lexer *l, Token *t) {
 	t->int_value = atol(num);
 }
 
+void read_string_lit(Lexer *l, Token *t) {
+    l->eat_char();
+    char *lit;
+    int lit_len = read_xchars(l, &lit, is_not_quote);
+    l->eat_char();
+
+    t->type = TOKEN_STRING_LIT;
+    t->lexeme = escape_str_lit(lit);
+}
+
 bool is_ident_char(char c) {
 	return c == '_' || isalnum(c);
 }
 
 bool is_digit(char c) {
 	return '0' <= c && c <= '9';
+}
+
+bool is_not_quote(char c) {
+    return c != '"';
+}
+
+char *escape_str_lit(char *text) {
+    int sl = strlen(text), nl = sl - 2, i;
+    char *etext;
+
+    for (i = 1; i < sl - 2; ++i) {
+        if (text[i] != '\\') continue;
+
+        switch (text[i+1]) {
+            case 'n':
+            case 'r':
+            case 't':
+            case '0':
+                nl--;
+                break;
+            default:
+                break;
+        }
+    }
+
+    etext = new char [nl];
+    for (i = 1; i < sl - 1; ++i) {
+        if (text[i] != '\\') {
+            etext[i-1] = text[i]; 
+            continue;
+        }
+
+        switch (text[i+1]) {
+            case 'n':
+                etext[i-1] = '\n';
+                break;
+            case 'r':
+                etext[i-1] = '\t';
+                break;
+            case 't':
+                etext[i-1] = '\r';
+                break;
+            case '0':
+                etext[i-1] = '\0';
+                break;
+            default:
+                break;
+        }
+    }
+
+    etext[nl] = '\0';
+    return etext;
 }

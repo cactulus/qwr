@@ -9,6 +9,7 @@ enum TokenType {
 	TOKEN_EOF = 1,
 	TOKEN_ATOM = 2,
 	TOKEN_INT_LIT,
+    TOKEN_STRING_LIT,
 
 	TOKEN_RETURN,
 	TOKEN_EXTERN,
@@ -33,10 +34,7 @@ struct Token {
 	int line;
 
 	union {
-		struct {
-			char *name;
-			int len;
-		} atom;
+		char *lexeme;
 		long int_value;
 	};
 

@@ -36,6 +36,7 @@ enum ExprKind {
 	BINARY,
 	VARIABLE,
 	INT_LIT,
+    STRING_LIT,
     FUNCTION_CALL,
     CAST,
     UNARY,
@@ -51,6 +52,7 @@ struct Expr {
 		Expr *deref_target;
 		Variable *var;
 		long int_value;	
+        char *string_lit;
 
 		struct {
 			Expr *lhs;

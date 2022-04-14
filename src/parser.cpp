@@ -100,7 +100,7 @@ Stmt *Parser::parse_func_def(Token *name) {
 
 	auto stmt = make_stmt(FUNCTION_DEFINITION);
 
-    auto cname = name->atom.name;
+    auto cname = name->lexeme;
     stmt->func_def.unmangled_name = cname;
 
     parse_function_parameters(stmt, true);
@@ -132,7 +132,7 @@ Stmt *Parser::parse_func_def(Token *name) {
 Stmt *Parser::parse_extern_func_def(Token *name) {
     auto stmt = make_stmt(EXTERN_FUNCTION);
 
-    auto cname = name->atom.name;
+    auto cname = name->lexeme;
     stmt->func_def.unmangled_name = cname;
 
     parse_function_parameters(stmt, false);
@@ -168,7 +168,7 @@ void Parser::parse_function_parameters(Stmt *stmt, bool add_to_scope) {
 			messenger->report(lexer.peek_token(), "Expected identifier");
 		}
 
-		auto pname = tok->atom.name;
+		auto pname = tok->lexeme;
 		if (!eat_token_if(':')) {
 			messenger->report(lexer.peek_token(), "Expected : after parameter name");
 		}
@@ -221,7 +221,7 @@ QType *Parser::parse_variable_definition_base(Token *name_token, u8 flags, Stmt 
     auto val_expr = parse_expr();
     auto val_type = val_expr->type;
 
-	stmt->var_def.var = make_variable(name_token->atom.name, val_type);
+	stmt->var_def.var = make_variable(name_token->lexeme, val_type);
 	stmt->var_def.value = val_expr;
     stmt->var_def.flags = flags;
 
@@ -425,6 +425,15 @@ Expr *Parser::parse_primary() {
         return expr;
 	}
 
+    if (tok->type == TOKEN_STRING_LIT) {
+		lexer.eat_token();
+		
+		auto expr = make_expr(STRING_LIT, typer->make_pointer(typer->get("i8")));
+        expr->string_lit = tok->lexeme;
+
+        return expr;
+    }
+
 	if (tok->type == TOKEN_ATOM) {
 		lexer.eat_token();
 
@@ -438,7 +447,7 @@ Expr *Parser::parse_primary() {
                 eat_token_if(',');
             }
 
-            auto unmangled_name = tok->atom.name;
+            auto unmangled_name = tok->lexeme;
             auto func_decl = get_func(tok, arguments);
 
 			auto expr = make_expr(FUNCTION_CALL, func_decl->func_def.return_type);
@@ -552,7 +561,7 @@ Scope::Scope(Messenger *_messenger, Scope *_parent) {
 }
 
 void Scope::add(Token *token, Variable *var) {
-	auto sname = std::string(token->atom.name);
+	auto sname = std::string(token->lexeme);
 	if (variables.find(sname) != variables.end()) {
 		messenger->report(token, "Variable already defined");
 	}
@@ -560,7 +569,7 @@ void Scope::add(Token *token, Variable *var) {
 }
 
 Variable *Scope::find(Token *token) {
-	auto sname = std::string(token->atom.name);
+	auto sname = std::string(token->lexeme);
 	auto it = variables.find(sname);
 	if (it == variables.end()) {
 		if (parent) {
@@ -583,7 +592,7 @@ void Parser::insert_func(Token *name_token, const char *mangled_name, Stmt *func
 }
 
 Stmt *Parser::get_func(Token *name_token, std::vector<Expr *> *arguments) {
-    auto unmangled_name = name_token->atom.name;
+    auto unmangled_name = name_token->lexeme;
 
     for (auto key : functions) {
         auto decl = key.second;

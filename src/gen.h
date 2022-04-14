@@ -36,10 +36,13 @@ struct CodeGenerator {
 	llvm::Value *gen_deref(Expr *expr);
 	llvm::Value *gen_variable(Expr *expr);
 	llvm::Value *gen_int_lit(Expr *expr);
+	llvm::Value *gen_string_lit(Expr *expr);
 	llvm::Value *gen_func_call(Expr *expr);
 
 	llvm::Value *gen_expr_target(Expr *expr);
 
+	void output(char *obj_file);
+	void link(char *obj_file, char *exe_file);
 	void dump();
 };
 

@@ -1,5 +1,6 @@
 #include <iostream>
 #include <unordered_map>
+#include <string>
 
 #include <llvm/Support/raw_os_ostream.h>
 #include <llvm/Support/FileSystem.h>
@@ -36,8 +37,11 @@ const std::unordered_map<ExprKind, gen_expr_fun> expr_gen_funs = {
 	{DEREF, (gen_expr_fun) &CodeGenerator::gen_deref},
 	{VARIABLE, (gen_expr_fun) &CodeGenerator::gen_variable},
 	{INT_LIT, (gen_expr_fun) &CodeGenerator::gen_int_lit},
+	{STRING_LIT, (gen_expr_fun) &CodeGenerator::gen_string_lit},
 	{FUNCTION_CALL, (gen_expr_fun) &CodeGenerator::gen_func_call},
 };
+
+std::unordered_map<std::string, Value *> constant_string_literals = {};
 
 void CodeGenerator::init(Typer *_typer) {
 	typer = _typer;
@@ -225,6 +229,18 @@ Value *CodeGenerator::gen_int_lit(Expr *expr) {
 	return ConstantInt::get(expr->type->llvm_type, expr->int_value);
 }
 
+Value *CodeGenerator::gen_string_lit(Expr *expr) {
+    auto it = constant_string_literals.find(expr->string_lit);
+
+    if (it != constant_string_literals.end()) {
+        return it->second;
+    } 
+
+    auto ptr = builder->CreateGlobalStringPtr(expr->string_lit);
+    constant_string_literals.insert(std::make_pair(expr->string_lit, ptr));
+    return ptr;
+}
+
 Value *CodeGenerator::gen_func_call(Expr *expr) {
     std::vector<Value *> arg_values{};
     auto target_fn = expr->func_call.target_func_decl->func_def.llvm_ref;
@@ -251,8 +267,37 @@ llvm::Value *CodeGenerator::gen_expr_target(Expr *expr) {
     return 0;
 }
 
+void CodeGenerator::output(char *obj_file) {
+	std::error_code err;
+	raw_fd_ostream out(obj_file, err, sys::fs::F_None);
+	
+	legacy::PassManager pass_manager;
+	auto file_type = TargetMachine::CGFT_ObjectFile;
+
+	target_machine->addPassesToEmitFile(pass_manager, out, nullptr, file_type);
+	pass_manager.run(*llvm_module);
+	out.flush();
+}
+
+void CodeGenerator::link(char *obj_file, char *exe_file) {
+	const char *linker = "ld";
+
+	std::vector<const char *> args{};
+	args.push_back(linker);
+	args.push_back("-o");
+	args.push_back(exe_file);
+	args.push_back(obj_file);
+	args.push_back(0);
+
+	int ret = execvp(linker, args);
+	if (ret == -1) {
+		perror("execvp");
+		exit(1);
+	}
+}
+
 void CodeGenerator::dump() {
-//	llvm_module->print(errs(), 0);
+	llvm_module->print(errs(), 0);
 }
 
 void init_targets(CodeGenerator *code_gen) {

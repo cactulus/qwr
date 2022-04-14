@@ -3,42 +3,59 @@
 
 #ifdef DIAGNOSTICS
 #include <chrono>
+#include <fstream>
 #define TIMER_NOW std::chrono::steady_clock::now()
-#define TIMER_DIFF std::chrono::duration_cast<std::chrono::microseconds>(end - start).count()
+#define TIMER_DIFF(a, b) std::chrono::duration_cast<std::chrono::microseconds>(b - a).count()
 #endif
 
 #include "manager.h"
 #include "arena.h"
 
-void Manager::init(char *code, int code_len) {
-	messenger.init(code);
+size_t read_entire_file(FILE *f, char **contents);
+char *change_file_extension(const char *filename, const char *extension);
+
+void Manager::init() {
 	parser.init(&typer, &messenger);
 	code_gen.init(&typer);
 	typer.init(&code_gen.llvm_context, &messenger);
-	parser.lexer.init(code, code_len);
 
 	arena_init();
 }
 
-void Manager::run() {
+void Manager::run(const char *src_file) {
     #ifdef DIAGNOSTICS
 	long long parse_time = 0;
 	long long llvm_time = 0;
+	long long link_time = 0;
 
-    auto start = TIMER_NOW;
+	auto total_start = TIMER_NOW;
     #endif 
 
-	Stmt *stmt = parser.parse_top_level_stmt();
+	FILE *input_file = fopen(src_file, "r");
+	char *code;
+	size_t code_len = read_entire_file(input_file, &code);
+	fclose(input_file);
 
-    #ifdef DIAGNOSTICS
-    auto end = TIMER_NOW;
-    auto diff = TIMER_DIFF;
+	messenger.init(code);
+	parser.lexer.init(code, code_len);
 
-	parse_time += diff;
-	#endif
+	Stmt *stmt;
 
-	while (!parser.has_reached_end) {
+	while (true) {
 		#ifdef DIAGNOSTICS
+		auto start = TIMER_NOW;
+		#endif
+
+		stmt = parser.parse_top_level_stmt();
+		if (parser.has_reached_end) {
+			break;
+		}
+
+		#ifdef DIAGNOSTICS
+		auto end = TIMER_NOW;
+		auto diff = TIMER_DIFF(start, end);
+		parse_time += diff;
+
 		start = TIMER_NOW;
 		#endif
 
@@ -46,25 +63,65 @@ void Manager::run() {
 
 		#ifdef DIAGNOSTICS
 		end = TIMER_NOW;
-		diff = TIMER_DIFF;
+		diff = TIMER_DIFF(start, end);
 
 		llvm_time += diff;
-		start = TIMER_NOW;
 		#endif 
-
-		stmt = parser.parse_top_level_stmt();
-
-		#ifdef DIAGNOSTICS
-		auto end = TIMER_NOW;
-		auto diff = TIMER_DIFF;
-
-		parse_time += diff;
-		#endif
 	}
-	code_gen.dump();
+	char *obj_file = change_file_extension(src_file, ".o");
+	char *exe_file = change_file_extension(src_file, ".exe");
+	code_gen.output(obj_file);
 
 	#ifdef DIAGNOSTICS
+	auto start = TIMER_NOW;
+	#endif
+
+	code_gen.link(obj_file, exe_file);
+
+	#ifdef DIAGNOSTICS
+	auto end = TIMER_NOW;
+	auto diff = TIMER_DIFF(start, end);
+	link_time = diff;
+
+    auto total_end = std::chrono::steady_clock::now();
+    auto total_time = TIMER_DIFF(total_start, total_end);
+
+    std::ifstream file_stream(src_file); 
+    auto loc = std::count(std::istreambuf_iterator<char>(file_stream), 
+             std::istreambuf_iterator<char>(), '\n');
+
+    std::cout << "Program LOC: " << loc << "\n";
+    std::cout << "Compilation time: " << (total_time / 1000) << " ms\n";
 	std::cout << "Parse time: " << (parse_time / 1000) << " ms\n";
 	std::cout << "LLVM time: " << (llvm_time / 1000) << " ms\n";
+	std::cout << "Link time: " << (link_time / 1000) << " ms\n";
 	#endif
+}
+
+size_t read_entire_file(FILE *f, char **contents) {
+	fseek(f, 0, SEEK_END);
+	size_t len = ftell(f);
+	fseek(f, 0, SEEK_SET);
+
+	char *buffer = new char[len + 1];
+	if (!fread(buffer, 1, len, f)) {
+		fclose(f);
+		return 0;
+	}
+
+	buffer[len] = '\0';
+	*contents = buffer;
+
+	return len;
+}
+
+char *change_file_extension(const char *filename, const char *extension) {
+	char *new_filename = new char[strlen(filename) + strlen(extension) + 1];
+	strcpy(new_filename, filename);
+	char *dot = strrchr(new_filename, '.');
+	if (dot) {
+		*dot = '\0';
+	}
+	strcat(new_filename, extension);
+	return new_filename;
 }
