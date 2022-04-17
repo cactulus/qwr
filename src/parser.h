@@ -41,7 +41,7 @@ enum ExprKind {
     CAST,
     UNARY,
     DEREF,
-    ASSIGN,
+    COMPARE_ZERO,
 };
 
 struct Expr {
@@ -49,7 +49,7 @@ struct Expr {
 	QType *type;
 
 	union {
-		Expr *deref_target;
+		Expr *target;
 		Variable *var;
 		long int_value;	
         char *string_lit;
@@ -75,12 +75,6 @@ struct Expr {
             Expr *target;
             unsigned char op;
         } unary;
-
-        struct {
-            Expr *target;
-            Expr *value;
-            TokenType op;
-        } assign;
 	};
 };
 
@@ -89,6 +83,8 @@ enum StmtKind {
 	FUNCTION_DEFINITION,
 	VARIABLE_DEFINITION,
 	RETURN,
+    IF,
+    BLOCK,
     EXPR_STMT,
 };
 
@@ -99,6 +95,7 @@ struct Stmt {
 	StmtKind kind;
 
 	union {
+        std::vector<Stmt *> *stmts;
 		Expr *return_value;
         Expr *target_expr;
 
@@ -117,6 +114,12 @@ struct Stmt {
 			std::vector<Stmt *> *body;
 			bool isvararg;
 		} func_def;
+
+		struct {
+		    Expr *cond;
+		    Stmt *then;
+		    Stmt *otherwise;
+        } if_;
 	};
 };
 
@@ -146,18 +149,22 @@ struct Parser {
 	Stmt *parse_variable_definition_type(Token *name_token, u8 flags, QType *type);
     QType *parse_variable_definition_base(Token *name_token, u8 flags, Stmt *stmt);
 
+    Stmt *parse_block();
+    Stmt *parse_if();
+
 	Stmt *parse_return();
 	Stmt *try_parse_atom();
 
 	void parse_function_parameters(Stmt *stmt, bool add_to_scope);
 
 	Expr *parse_expr(int prec=1);
-	Expr *parse_assign_or_binary(int prec);
+	Expr *parse_binary(int prec);
 	Expr *parse_unary();
 	Expr *parse_postfix();
 	Expr *parse_primary();
 
     Expr *cast(Expr *target, QType *to);
+    Expr *make_compare_zero(Expr *expr);
 	QType *parse_type();
 
     bool expr_is_targatable(Expr *expr);

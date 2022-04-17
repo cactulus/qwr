@@ -6,7 +6,7 @@ OBJS := $(SRCS:%.cpp=%.o)
 DEPS := $(SRCS:%.cpp=%.d)
 
 LLVM_CONFIG:=llvm-config
-CXXFLAGS := -std=c++20 -O3 -DDIAGNOSTICS
+CXXFLAGS := -std=c++20 -ggdb -DDIAGNOSTICS
 
 CXX = clang++
 

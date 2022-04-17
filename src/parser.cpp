@@ -13,11 +13,19 @@ const std::unordered_map<int, int> operator_precedence = {
 	{TOKEN_DIV_EQ, 1},
 	{TOKEN_MOD_EQ, 1},
 	{'=', 1},
-	{'+', 2},
-	{'-', 2},
-	{'*', 3},
-	{'/', 3},
-	{'%', 3},
+    {TOKEN_BAR_BAR, 2},
+    {TOKEN_AND_AND, 3},
+    {TOKEN_EQ_EQ, 4},
+    {TOKEN_NOT_EQ, 4},
+    {TOKEN_LT_EQ, 5},
+    {TOKEN_GT_EQ, 5},
+    {'<', 5},
+    {'>', 5},
+	{'+', 6},
+	{'-', 6},
+	{'*', 7},
+	{'/', 7},
+	{'%', 7},
 };
 
 void Parser::init(Typer *_typer, Messenger *_messenger) {
@@ -87,6 +95,14 @@ Stmt *Parser::parse_top_level_stmt() {
 
 Stmt *Parser::parse_stmt() {
 	auto tok = lexer.peek_token();
+
+	if (eat_token_if('{')) {
+	    return parse_block();
+    }
+
+    if (eat_token_if(TOKEN_IF)) {
+        return parse_if();
+    }
 
 	if (eat_token_if(TOKEN_RETURN)) {
 		return parse_return();
@@ -232,6 +248,36 @@ QType *Parser::parse_variable_definition_base(Token *name_token, u8 flags, Stmt 
     return val_type;
 }
 
+Stmt *Parser::parse_block() {
+    auto stmt = make_stmt(BLOCK);
+    stmt->stmts = new std::vector<Stmt *>();
+
+    while (!eat_token_if('}')) {
+        stmt->stmts->push_back(parse_stmt());
+    }
+
+    return stmt;
+}
+
+Stmt *Parser::parse_if() {
+    auto stmt = make_stmt(IF);
+
+    auto cond = parse_expr();
+    if (!cond->type->isbool()) {
+        cond = make_compare_zero(cond);
+    }
+
+    stmt->if_.then = parse_stmt();
+    if (eat_token_if(TOKEN_ELSE)) {
+        stmt->if_.otherwise = parse_stmt();
+    } else {
+        stmt->if_.otherwise = 0;
+    }
+    stmt->if_.cond = cond;
+
+    return stmt;
+}
+
 Stmt *Parser::parse_return() {
     Expr *val;
     if (eat_token_if(';')) {
@@ -279,10 +325,10 @@ Stmt *Parser::try_parse_atom() {
 }
 
 Expr *Parser::parse_expr(int prec) {
-	return parse_assign_or_binary(prec);
+	return parse_binary(prec);
 }
 
-Expr *Parser::parse_assign_or_binary(int prec) {
+Expr *Parser::parse_binary(int prec) {
 	auto lhs = parse_unary();
 
 	while (true) {
@@ -296,50 +342,54 @@ Expr *Parser::parse_assign_or_binary(int prec) {
 			break;
 
 		lexer.eat_token();
+        auto rhs = parse_binary(prec + 1);
+        auto lhs_type = lhs->type;
+        auto rhs_type = rhs->type;
+        auto eval_type = lhs_type;
 
-        if (tok_type == '=' || (tok_type >= TOKEN_ADD_EQ && tok_type <= TOKEN_MOD_EQ)) {
-            auto value = parse_assign_or_binary(prec + 1);
-            auto lhs_type = lhs->type;
-            auto rhs_type = value->type;
+        if (ttype_is_conditional(tok_type)) {
+            eval_type = typer->get("bool");
+        }
 
+        if (ttype_is_logical(tok_type)) {
+            eval_type = typer->get("bool");
+
+            if (!lhs_type->isbool()) {
+                lhs = make_compare_zero(lhs);
+            }
+            if (!rhs_type->isbool()) {
+                rhs = make_compare_zero(rhs);
+            }
+        }
+
+        if (ttype_is_assign(tok_type)) {
             if (!expr_is_targatable(lhs)) {
                 messenger->report(tok, "Can't assign value to this expression");
             }
+        }
 
-            if (!typer->compare(lhs_type, rhs_type)) {
-                if (typer->can_convert(rhs_type, lhs_type)) {
-                    value = cast(value, lhs_type);
-                } else {
-                    messenger->report(tok, "Type of variable and type of value are do not match");
-                }
+        if (ttype_is_binary(tok_type)) {
+            if (!(lhs_type->ispointer() && rhs_type->isint()) && (!lhs_type->isint() && !rhs_type->isint())) {
+                messenger->report(tok, "Illegal type for binary expression"); 
             }
+        }
 
-			auto expr = make_expr(ASSIGN, lhs_type);
-			expr->assign.target = lhs;
-			expr->assign.value = value;
-			expr->assign.op = tok_type;
-
-            lhs = expr;
-        } else {
-            auto rhs = parse_assign_or_binary(prec + 1);
-            auto lhs_type = lhs->type;
-            auto rhs_type = rhs->type;
-
-             if (!typer->compare(lhs_type, rhs_type)) {
-                if (typer->can_convert(rhs_type, lhs_type)) {
-                    rhs = cast(rhs, lhs_type);
-                } else {
+        if (!typer->compare(lhs_type, rhs_type)) {
+            if (typer->can_convert(rhs_type, lhs_type)) {
+                rhs = cast(rhs, lhs_type);
+            } else {
+                if (!(lhs_type->ispointer() && rhs_type->isint() && ttype_is_binary(tok_type))) {
                     messenger->report(tok, "Lhs and Rhs of binary expression are of different types");
                 }
             }
-
-			auto expr = make_expr(BINARY, lhs_type);
-			expr->bin.lhs = lhs;
-			expr->bin.rhs = rhs;
-			expr->bin.op = op_it->first;
-
-            lhs = expr;
         }
+
+        auto expr = make_expr(BINARY, eval_type);
+        expr->bin.lhs = lhs;
+        expr->bin.rhs = rhs;
+        expr->bin.op = op_it->first;
+
+        lhs = expr;
 	}
 
 	return lhs;
@@ -371,7 +421,7 @@ Expr *Parser::parse_unary() {
         }
 
 		auto expr = make_expr(DEREF, target->type->element_type);
-        expr->deref_target = target;
+        expr->target = target;
 		
         return expr;
     } else if (eat_token_if('+')) {
@@ -493,6 +543,12 @@ Expr *Parser::cast(Expr *target, QType *to) {
     return expr;
 }
 
+Expr *Parser::make_compare_zero(Expr *expr) {
+    Expr *cmp_expr = make_expr(COMPARE_ZERO, typer->get("bool"));
+    cmp_expr->target = expr;
+    return cmp_expr;
+}
+
 QType *Parser::parse_type() {
 	auto tok = lexer.peek_token();
 	if (tok->type == '*') {
@@ -562,8 +618,14 @@ const char *Parser::mangle_func(Stmt *stmt) {
 }
 
 std::string Parser::mangle_type(QType *type) {
+	if (type->isuint()) {
+		return "u";
+	}
 	if (type->isint()) {
 		return "i";
+	}
+	if (type->isbool()) {
+		return "b";
 	}
 	if (type->ispointer()) {
 		return "p" + mangle_type(type->element_type);

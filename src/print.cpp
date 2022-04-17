@@ -10,6 +10,8 @@ const std::unordered_map<TokenType, std::string> keyword_tokens_names = {
 	{TOKEN_AS, "as"},
 	{TOKEN_TRUE, "true"},
 	{TOKEN_FALSE, "false"},
+	{TOKEN_IF, "if"},
+	{TOKEN_ELSE, "else"},
 };
 
 const std::unordered_map<TokenType, std::string> two_char_tokens_names = {
@@ -20,6 +22,12 @@ const std::unordered_map<TokenType, std::string> two_char_tokens_names = {
 	{TOKEN_MUL_EQ, "'*='"},
 	{TOKEN_DIV_EQ, "'/='"},
 	{TOKEN_MOD_EQ, "'%='"},
+	{TOKEN_EQ_EQ, "'=='"},
+	{TOKEN_NOT_EQ, "'!='"},
+	{TOKEN_LT_EQ, "'<='"},
+	{TOKEN_GT_EQ, "'>='"},
+	{TOKEN_AND_AND, "'&&'"},
+	{TOKEN_BAR_BAR, "'||'"},
 };
 
 void Token::print() {

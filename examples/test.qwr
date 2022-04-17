@@ -9,8 +9,12 @@ print :: (v: *u8) {
 }
 
 main :: () int {
-    print(20);
-    print("Hello World");
+    a := 5;
+    b := 0; 
+
+    if a || b {
+        print("Hello World!");
+    }
 
     return 0;
 }

@@ -7,15 +7,6 @@
 enum TokenType {
 	TOKEN_ERROR = 0,
 	TOKEN_EOF = 1,
-	TOKEN_ATOM = 2,
-	TOKEN_INT_LIT,
-    TOKEN_STRING_LIT,
-
-	TOKEN_RETURN,
-	TOKEN_EXTERN,
-	TOKEN_AS,
-	TOKEN_TRUE,
-	TOKEN_FALSE,
 
 	TOKEN_COLON_COLON,
 	TOKEN_DOT_DOT,
@@ -25,6 +16,26 @@ enum TokenType {
 	TOKEN_MUL_EQ,
 	TOKEN_DIV_EQ,
 	TOKEN_MOD_EQ,
+
+	TOKEN_EQ_EQ,
+	TOKEN_NOT_EQ,
+	TOKEN_LT_EQ,
+	TOKEN_GT_EQ,
+
+	TOKEN_AND_AND,
+	TOKEN_BAR_BAR,
+	
+	TOKEN_ATOM = 128,
+	TOKEN_INT_LIT,
+    TOKEN_STRING_LIT,
+
+	TOKEN_RETURN,
+	TOKEN_EXTERN,
+	TOKEN_AS,
+	TOKEN_TRUE,
+	TOKEN_FALSE,
+	TOKEN_IF,
+	TOKEN_ELSE,
 };
 
 struct Token {
@@ -67,5 +78,14 @@ struct Lexer {
 	char peek_char(int ahead=0);
 	void eat_char();
 };
+
+bool ttype_is_binary(int type);
+bool ttype_is_binary(TokenType type);
+bool ttype_is_conditional(int type);
+bool ttype_is_conditional(TokenType type);
+bool ttype_is_assign(int type);
+bool ttype_is_assign(TokenType type);
+bool ttype_is_logical(int type);
+bool ttype_is_logical(TokenType type);
 
 #endif

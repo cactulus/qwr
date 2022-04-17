@@ -15,6 +15,7 @@
 #include <llvm/IR/DerivedTypes.h>
 #include "llvm/Transforms/IPO/PassManagerBuilder.h"
 
+#include "lexer.h"
 #include "gen.h"
 #include "manager.h"
 
@@ -30,12 +31,13 @@ const std::unordered_map<StmtKind, gen_stmt_fun> stmt_gen_funs = {
 	{EXTERN_FUNCTION, (gen_stmt_fun) &CodeGenerator::gen_extern_func_def},
 	{VARIABLE_DEFINITION, (gen_stmt_fun) &CodeGenerator::gen_var_def},
 	{RETURN, (gen_stmt_fun) &CodeGenerator::gen_return},
+    {IF, (gen_stmt_fun) &CodeGenerator::gen_if},
+    {BLOCK, (gen_stmt_fun) &CodeGenerator::gen_block},
 	{EXPR_STMT, (gen_stmt_fun) &CodeGenerator::gen_expr_stmt},
 };
 
 const std::unordered_map<ExprKind, gen_expr_fun> expr_gen_funs = {
 	{BINARY, (gen_expr_fun) &CodeGenerator::gen_binary},
-	{ASSIGN, (gen_expr_fun) &CodeGenerator::gen_assign},
 	{CAST, (gen_expr_fun) &CodeGenerator::gen_cast},
 	{UNARY, (gen_expr_fun) &CodeGenerator::gen_unary},
 	{DEREF, (gen_expr_fun) &CodeGenerator::gen_deref},
@@ -43,9 +45,12 @@ const std::unordered_map<ExprKind, gen_expr_fun> expr_gen_funs = {
 	{INT_LIT, (gen_expr_fun) &CodeGenerator::gen_int_lit},
 	{STRING_LIT, (gen_expr_fun) &CodeGenerator::gen_string_lit},
 	{FUNCTION_CALL, (gen_expr_fun) &CodeGenerator::gen_func_call},
+	{COMPARE_ZERO, (gen_expr_fun) &CodeGenerator::gen_compare_zero},
 };
 
 std::unordered_map<std::string, Value *> constant_string_literals = {};
+
+static Function *current_function;
 
 void CodeGenerator::init(Typer *_typer) {
 	typer = _typer;
@@ -73,6 +78,7 @@ void CodeGenerator::gen_func_def(Stmt *stmt) {
  	auto fn = Function::Create(fun_type, linkage,linkage, stmt->func_def.mangled_name, llvm_module);
 
     stmt->func_def.llvm_ref = fn;
+    current_function = fn;
 
 	auto entry = BasicBlock::Create(llvm_context, "", fn);
 	builder->SetInsertPoint(entry);
@@ -138,6 +144,35 @@ void CodeGenerator::gen_return(Stmt *stmt) {
     }
 }
 
+void CodeGenerator::gen_if(Stmt *stmt) {
+    BasicBlock *true_block = BasicBlock::Create(llvm_context, "", current_function);
+    BasicBlock *false_block = NULL;
+    BasicBlock *after_block = NULL;
+    if (stmt->if_.otherwise) {
+        false_block = BasicBlock::Create(llvm_context, "", current_function);
+        after_block = BasicBlock::Create(llvm_context, "", current_function);
+    } else {
+        false_block = BasicBlock::Create(llvm_context, "", current_function);
+        after_block = false_block;
+    }
+    Value *cmp = gen_expr(stmt->if_.cond);
+    builder->CreateCondBr(cmp, true_block, false_block);
+    builder->SetInsertPoint(true_block);
+    gen_stmt(stmt->if_.then);
+    builder->CreateBr(stmt->if_.otherwise ? after_block : false_block);
+    builder->SetInsertPoint(false_block);
+    if (stmt->if_.otherwise) {
+        gen_stmt(stmt->if_.otherwise);
+        builder->CreateBr(after_block);
+        builder->SetInsertPoint(after_block);
+    }
+}
+
+void CodeGenerator::gen_block(Stmt *stmt) {
+    for (auto s : *stmt->stmts)
+        gen_stmt(s);
+}
+
 void CodeGenerator::gen_expr_stmt(Stmt *stmt) {
     gen_expr(stmt->target_expr);
 }
@@ -151,44 +186,112 @@ Value *CodeGenerator::gen_expr(Expr *expr) {
 Value *CodeGenerator::gen_binary(Expr *expr) {
 	auto lhs = gen_expr(expr->bin.lhs);
 	auto rhs = gen_expr(expr->bin.rhs);
+	auto top = expr->bin.op;
 	Instruction::BinaryOps op;
-
-	switch (expr->bin.op) {
-		case '+': op = Instruction::BinaryOps::Add; break;
-		case '-': op = Instruction::BinaryOps::Sub; break;
-		case '*': op = Instruction::BinaryOps::Mul; break;
-		case '/': op = Instruction::BinaryOps::SDiv; break;
-		case '%': op = Instruction::BinaryOps::SRem; break;
-	}
-
-	return builder->CreateBinOp(op, lhs, rhs);
-}
-
-Value *CodeGenerator::gen_assign(Expr *expr) {
-	auto target = gen_expr_target(expr->assign.target);
-	auto value = gen_expr(expr->assign.value);
-
+	CmpInst::Predicate cmpop;
 	Value *new_value;
+	bool is_ptr = expr->type->ispointer();
 
-	if (expr->assign.op == '=') {
-		new_value = value;
-	} else {
-		auto target_value = gen_expr(expr->assign.target);
-		Instruction::BinaryOps op;
+    if (expr->type->isuint() || is_ptr) {
+        switch (top) {
+            case '+':
+            case TOKEN_ADD_EQ: 
+                op = Instruction::BinaryOps::Add;
+                break;
+            case '-':
+            case TOKEN_SUB_EQ:
+                op = Instruction::BinaryOps::Sub;
+                break;
+            case '*':
+            case TOKEN_MUL_EQ:
+                op = Instruction::BinaryOps::Mul;
+                break;
+            case '/':
+            case TOKEN_DIV_EQ:
+                op = Instruction::BinaryOps::UDiv;
+                break;
+            case '%':
+            case TOKEN_MOD_EQ:
+                op = Instruction::BinaryOps::URem;
+                break;
+            case TOKEN_EQ_EQ: cmpop = CmpInst::Predicate::ICMP_EQ; break;
+            case TOKEN_NOT_EQ: cmpop = CmpInst::Predicate::ICMP_NE; break;
+            case TOKEN_LT_EQ: cmpop = CmpInst::Predicate::ICMP_ULE; break;
+            case TOKEN_GT_EQ: cmpop = CmpInst::Predicate::ICMP_UGE; break;
+            case '<': cmpop = CmpInst::Predicate::ICMP_ULT; break;
+            case '>': cmpop = CmpInst::Predicate::ICMP_UGT; break;
+	    }
+    } else {
+        switch (top) {
+            case '+':
+            case TOKEN_ADD_EQ: 
+                op = Instruction::BinaryOps::Add;
+                break;
+            case '-':
+            case TOKEN_SUB_EQ:
+                op = Instruction::BinaryOps::Sub;
+                break;
+            case '*':
+            case TOKEN_MUL_EQ:
+                op = Instruction::BinaryOps::Mul;
+                break;
+            case '/':
+            case TOKEN_DIV_EQ:
+                op = Instruction::BinaryOps::SDiv;
+                break;
+            case '%':
+            case TOKEN_MOD_EQ:
+                op = Instruction::BinaryOps::SRem;
+                break;
+            case TOKEN_EQ_EQ: cmpop = CmpInst::Predicate::ICMP_EQ; break;
+            case TOKEN_NOT_EQ: cmpop = CmpInst::Predicate::ICMP_NE; break;
+            case TOKEN_LT_EQ: cmpop = CmpInst::Predicate::ICMP_SLE; break;
+            case TOKEN_GT_EQ: cmpop = CmpInst::Predicate::ICMP_SGE; break;
+            case '<': cmpop = CmpInst::Predicate::ICMP_SLT; break;
+            case '>': cmpop = CmpInst::Predicate::ICMP_SGT; break;
+	    }
+    }
 
-		switch (expr->assign.op) {
-			case TOKEN_ADD_EQ: op = Instruction::BinaryOps::Add; break;
-			case TOKEN_SUB_EQ: op = Instruction::BinaryOps::Sub; break;
-			case TOKEN_MUL_EQ: op = Instruction::BinaryOps::Mul; break;
-			case TOKEN_DIV_EQ: op = Instruction::BinaryOps::SDiv; break;
-			case TOKEN_MOD_EQ: op = Instruction::BinaryOps::SRem; break;
-		}
+	if (top == '=') {
+		new_value = rhs;
+	    auto target = gen_expr_target(expr->bin.lhs);
+	    builder->CreateStore(new_value, target);
+	} else if (ttype_is_binary(top) || top >= TOKEN_ADD_EQ && top <= TOKEN_MOD_EQ) {
+	    if (is_ptr) {
+	        new_value = builder->CreateInBoundsGEP(lhs, rhs);
+        } else {
+		    new_value = builder->CreateBinOp(op, lhs, rhs);
+        }
+	}  else if (ttype_is_conditional(top)) {
+        new_value = builder->CreateICmp(cmpop, lhs, rhs);
+    } else if (ttype_is_logical(top)) {
+        BasicBlock *rhs_block = BasicBlock::Create(llvm_context, "", current_function);
+        BasicBlock *merge_block = BasicBlock::Create(llvm_context, "", current_function);
 
-		new_value = builder->CreateBinOp(op, target_value, value);
-	}
+        lhs = builder->CreateIsNotNull(lhs);
 
-	builder->CreateStore(new_value, target);
-	return value;
+        if (top == TOKEN_AND_AND) {
+            builder->CreateCondBr(lhs, rhs_block, merge_block);
+        } else {
+            builder->CreateCondBr(lhs, merge_block, rhs_block);
+        }
+
+        BasicBlock *lhs_block = builder->GetInsertBlock();
+
+    	builder->SetInsertPoint(rhs_block);
+        rhs = builder->CreateIsNotNull(rhs);
+
+        builder->CreateBr(merge_block);
+        builder->SetInsertPoint(merge_block);
+
+        PHINode *cmp = builder->CreatePHI(expr->type->llvm_type, 2);
+        cmp->addIncoming(lhs, lhs_block);
+        cmp->addIncoming(rhs, rhs_block);
+
+        return cmp;
+    }
+
+    return new_value;
 }
 
 Value *CodeGenerator::gen_cast(Expr *expr) {
@@ -234,7 +337,7 @@ Value *CodeGenerator::gen_unary(Expr *expr) {
 }
 
 Value *CodeGenerator::gen_deref(Expr *expr) {
-    auto target = gen_expr(expr->deref_target);
+    auto target = gen_expr(expr->target);
     return builder->CreateLoad(expr->type->llvm_type, target);
 }
 
@@ -268,14 +371,21 @@ Value *CodeGenerator::gen_func_call(Expr *expr) {
     return builder->CreateCall(target_fn, arg_values);
 }
 
+Value *CodeGenerator::gen_compare_zero(Expr *expr) {
+    Value *target = gen_expr(expr->target);
+	Value *zero = ConstantInt::get(typer->get("s32")->llvm_type, 0);
+
+    return builder->CreateICmp(CmpInst::Predicate::ICMP_NE, target, zero);
+}
+
 llvm::Value *CodeGenerator::gen_expr_target(Expr *expr) {
     if (expr->kind == VARIABLE) {
         return expr->var->llvm_ref;
     }
 
     if (expr->kind == DEREF) {
-        auto target = gen_expr_target(expr->deref_target); 
-        auto type = expr->deref_target->type->llvm_type;
+        auto target = gen_expr_target(expr->target); 
+        auto type = expr->target->type->llvm_type;
 
         return builder->CreateLoad(type, target);
     }

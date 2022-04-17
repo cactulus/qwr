@@ -19,7 +19,7 @@ static bool is_not_quote(char c);
 
 char *escape_str_lit(char *text);
 
-const char *operator_chars = "+-=*/();,.{}&|:";
+const char *operator_chars = "+-=*/();,.{}&|:<>![]";
 
 const std::unordered_map<std::string, TokenType> keyword_tokens = {
 	{"return", TOKEN_RETURN},
@@ -27,6 +27,8 @@ const std::unordered_map<std::string, TokenType> keyword_tokens = {
 	{"as", TOKEN_AS},
 	{"true", TOKEN_TRUE},
 	{"false", TOKEN_FALSE},
+	{"if", TOKEN_IF},
+	{"else", TOKEN_ELSE},
 };
 
 const std::unordered_map<std::string, TokenType> two_char_tokens = {
@@ -37,6 +39,12 @@ const std::unordered_map<std::string, TokenType> two_char_tokens = {
 	{"*=", TOKEN_MUL_EQ},
 	{"/=", TOKEN_DIV_EQ},
 	{"%=", TOKEN_MOD_EQ},
+	{"==", TOKEN_EQ_EQ},
+	{"!=", TOKEN_NOT_EQ},
+	{"<=", TOKEN_LT_EQ},
+	{">=", TOKEN_GT_EQ},
+	{"&&", TOKEN_AND_AND},
+	{"||", TOKEN_BAR_BAR},
 }; 
 
 void Lexer::init(char *code, int code_len) {
@@ -279,4 +287,53 @@ char *escape_str_lit(char *text) {
 
     etext[nl] = '\0';
     return etext;
+}
+
+bool ttype_is_binary(int type) {
+    switch (type) {
+        case '+':
+        case '-':
+        case '*':
+        case '/':
+        case '%':
+            return true;
+        default:
+            return false;
+    }
+}
+
+bool ttype_is_binary(TokenType type) {
+    return ttype_is_binary((int) type);
+}
+
+bool ttype_is_conditional(int type) {
+    if (type >= TOKEN_EQ_EQ && type <= TOKEN_GT_EQ) {
+        return true;
+    }
+
+    if (type == '<' || type == '>') {
+        return true;
+    }
+
+    return false;
+}
+
+bool ttype_is_conditional(TokenType type) {
+    return ttype_is_conditional((int) type);
+}
+
+bool ttype_is_assign(int type) {
+    return type == '=' || (type >= TOKEN_ADD_EQ && type <= TOKEN_MOD_EQ);
+}
+
+bool ttype_is_assign(TokenType type) {
+    return ttype_is_assign((int) type);
+}
+
+bool ttype_is_logical(int type) {
+    return type == TOKEN_AND_AND || type == TOKEN_BAR_BAR;
+}
+
+bool ttype_is_logical(TokenType type) {
+    return ttype_is_logical((int) type);
 }
