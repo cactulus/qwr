@@ -8,13 +8,20 @@ print :: (v: *u8) {
     printf("%s\n", v);
 }
 
-main :: () int {
-    a := 5;
-    b := 0; 
+sub :: (a: s32, b: s32) s32, s32 {
+    return a - b, b - a;
+}
 
-    if a || b {
-        print("Hello World!");
-    }
+main :: () int {
+    a := 8;
+    b := 5; 
+
+    c, d := sub(a, b);
+    e := sub(a, b);
+
+    print(c);
+    print(d);
+    print(e);
 
     return 0;
 }

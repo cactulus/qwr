@@ -41,6 +41,9 @@ struct CodeGenerator {
 
 	llvm::Value *gen_expr_target(Expr *expr);
 
+    llvm::Type *gen_return_type(std::vector<QType *> *types);
+    llvm::Type *gen_return_type(std::vector<Expr *> *types);
+
     void init_module();
 	void output(char *obj_file, u8 flags);
 	void link(char *obj_file, char *exe_file);

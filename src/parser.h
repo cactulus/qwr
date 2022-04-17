@@ -30,6 +30,7 @@ struct Scope {
 
 	void add(Token *token, Variable *var);
 	Variable *find(Token *token);
+	Variable *find_null(const char *name);
 };
 
 enum ExprKind {
@@ -90,17 +91,21 @@ enum StmtKind {
 
 const u8 VAR_CONST = 0x1;
 const u8 VAR_GLOBAL = 0x2;
+const u8 VAR_MULTIPLE = 0x4;
 
 struct Stmt {
 	StmtKind kind;
 
 	union {
         std::vector<Stmt *> *stmts;
-		Expr *return_value;
+        std::vector<Expr *> *return_values;
         Expr *target_expr;
 
 		struct {
-			Variable *var;
+			union {
+			    Variable *var;
+                std::vector<Variable *> *vars;
+            };
 			Expr *value;
 			u8 flags;
 		} var_def;
@@ -109,7 +114,7 @@ struct Stmt {
             llvm::Function *llvm_ref;
 			const char *mangled_name;
             const char *unmangled_name;
-			QType *return_type;
+            std::vector<QType *> *return_types;
 			std::vector<Variable *> *parameters;
 			std::vector<Stmt *> *body;
 			bool isvararg;
@@ -149,6 +154,8 @@ struct Parser {
 	Stmt *parse_variable_definition_type(Token *name_token, u8 flags, QType *type);
     QType *parse_variable_definition_base(Token *name_token, u8 flags, Stmt *stmt);
 
+    Stmt *parse_multiple_variable_definition(Token *name_token);
+
     Stmt *parse_block();
     Stmt *parse_if();
 
@@ -186,6 +193,7 @@ struct Parser {
 	Stmt *make_stmt(StmtKind kind);
 	Expr *make_expr(ExprKind kind, QType *type);
 	Variable *make_variable(const char *name, QType *type);
+	Variable *add_or_get_variable(Token *token, QType *type);
 };
 
 #endif

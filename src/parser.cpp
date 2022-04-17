@@ -28,6 +28,8 @@ const std::unordered_map<int, int> operator_precedence = {
 	{'%', 7},
 };
 
+static Stmt *current_function;
+
 void Parser::init(Typer *_typer, Messenger *_messenger) {
 	typer = _typer;
 	messenger = _messenger;
@@ -115,6 +117,7 @@ Stmt *Parser::parse_func_def(Token *name) {
     scope_push();
 
 	auto stmt = make_stmt(FUNCTION_DEFINITION);
+	current_function = stmt;
 
     auto cname = name->lexeme;
     stmt->func_def.unmangled_name = cname;
@@ -123,14 +126,17 @@ Stmt *Parser::parse_func_def(Token *name) {
     auto mname = mangle_func(stmt);
     stmt->func_def.mangled_name = mname;
 
+    stmt->func_def.return_types = new std::vector<QType *>();
+
     if (eat_token_if('{')) {
-        stmt->func_def.return_type = typer->get("void");
+        stmt->func_def.return_types->push_back(typer->get("void"));
     } else {
         auto return_type = parse_type();
-        stmt->func_def.return_type = return_type;
+        stmt->func_def.return_types->push_back(return_type);
 
-        if (!eat_token_if('{')) {
-            messenger->report(lexer.peek_token(), "Expected { after function declaration");
+        while (!eat_token_if('{')) {
+            eat_token_if(',');
+            stmt->func_def.return_types->push_back(parse_type());
         }
     }
 
@@ -155,12 +161,13 @@ Stmt *Parser::parse_extern_func_def(Token *name) {
 
     auto mname = mangle_func(stmt);
     stmt->func_def.mangled_name = mname;
+    stmt->func_def.return_types = new std::vector<QType *>();
 
     if (eat_token_if(';')) {
-        stmt->func_def.return_type = typer->get("void");
+        stmt->func_def.return_types->push_back(typer->get("void"));
     } else {
         auto return_type = parse_type();
-        stmt->func_def.return_type = return_type;
+        stmt->func_def.return_types->push_back(return_type);
 
         eat_token_if(';');
     }
@@ -248,6 +255,46 @@ QType *Parser::parse_variable_definition_base(Token *name_token, u8 flags, Stmt 
     return val_type;
 }
 
+Stmt *Parser::parse_multiple_variable_definition(Token *name_token) {
+    auto vars = new std::vector<Variable *>();
+    std::vector<Token *> var_names;
+
+    var_names.push_back(name_token);
+    while (!eat_token_if(':')) {
+        auto tok = lexer.peek_token();
+        lexer.eat_token();
+        var_names.push_back(tok);
+        eat_token_if(',');
+    }
+
+    if (!eat_token_if('=')) {
+        messenger->report(lexer.peek_token(), "Expected '='");
+    }
+
+    auto stmt = make_stmt(VARIABLE_DEFINITION); 
+    stmt->var_def.flags |= VAR_MULTIPLE;
+    stmt->var_def.vars = vars;
+
+    auto expr_tok = lexer.peek_token();
+    auto val = parse_expr();
+    if (val->kind != FUNCTION_CALL) {
+        messenger->report(expr_tok, "Expected function call with multiple return values"); 
+    }
+    auto return_types = val->func_call.target_func_decl->func_def.return_types;
+    if (var_names.size() > return_types->size()) {
+        messenger->report(expr_tok, "Can't assign more variables then function returns values");
+    }
+    
+    for (int i = 0; i < var_names.size(); ++i) {
+        vars->push_back(add_or_get_variable(var_names[i], (*return_types)[i]));
+    }
+
+    eat_token_if(';');
+
+    stmt->var_def.value = val;
+    return stmt;
+}
+
 Stmt *Parser::parse_block() {
     auto stmt = make_stmt(BLOCK);
     stmt->stmts = new std::vector<Stmt *>();
@@ -279,16 +326,42 @@ Stmt *Parser::parse_if() {
 }
 
 Stmt *Parser::parse_return() {
-    Expr *val;
+    auto return_types = current_function->func_def.return_types;
+    std::vector<Expr *> *return_values;
+    auto tok = lexer.peek_token();
+
     if (eat_token_if(';')) {
-        val = 0;
+        return_values = 0;
     } else {
-        val = parse_expr();
-    	eat_semicolon();
+        return_values = new std::vector<Expr *>();
+
+        return_values->push_back(parse_expr());
+
+        while (!eat_token_if(';')) {
+            eat_token_if(',');
+            return_values->push_back(parse_expr());
+        }
+    }
+
+    if (return_values->size() != return_types->size()) {
+        messenger->report(tok, "Return values do not match return types of function");
+    } else {
+        for (int i = 0; i < return_values->size(); ++i) {
+            auto ret_val = (*return_values)[i];
+            auto ret_type = (*return_types)[i];
+
+            if (!typer->compare(ret_val->type, ret_type)) {
+                if (typer->can_convert(ret_val->type, ret_type)) {
+                    (*return_values)[i] = cast(ret_val, ret_type);
+                } else {
+                    messenger->report(tok, "Return values do not match return types of function");
+                }
+            }
+        }
     }
 
 	auto stmt = make_stmt(RETURN);
-	stmt->return_value = val;
+	stmt->return_values = return_values;
 
 	return stmt;
 }
@@ -314,7 +387,12 @@ Stmt *Parser::try_parse_atom() {
 
                 return parse_variable_definition_type(atom, false, type);
             }
-        } 
+        } else if (lexer.peek_token(1)->type == ',') {
+            lexer.eat_token();
+            lexer.eat_token();
+
+            return parse_multiple_variable_definition(atom);
+        }
 	}
 
     auto stmt = make_stmt(EXPR_STMT);
@@ -504,7 +582,8 @@ Expr *Parser::parse_primary() {
             auto unmangled_name = tok->lexeme;
             auto func_decl = get_func(tok, arguments);
 
-			auto expr = make_expr(FUNCTION_CALL, func_decl->func_def.return_type);
+            auto return_types = func_decl->func_def.return_types;
+			auto expr = make_expr(FUNCTION_CALL, (*return_types)[0]);
 			expr->func_call.arguments = arguments;
             expr->func_call.target_func_decl = func_decl;
 
@@ -647,13 +726,20 @@ void Scope::add(Token *token, Variable *var) {
 }
 
 Variable *Scope::find(Token *token) {
-	auto sname = std::string(token->lexeme);
+    auto var = find_null(token->lexeme);
+    if (!var) {
+        messenger->report(token, "Undefined variable");
+    }
+    return var;
+}
+
+Variable *Scope::find_null(const char *name) {
+	auto sname = std::string(name);
 	auto it = variables.find(sname);
 	if (it == variables.end()) {
 		if (parent) {
-			return parent->find(token);
+			return parent->find_null(name);
 		}
-        messenger->report(token, "Undefined variable");
         return 0;
 	}
 	return it->second;
@@ -727,5 +813,21 @@ Variable *Parser::make_variable(const char *name, QType *type) {
     auto var = create_variable();
 	var->name = name;
 	var->type = type;
+    return var;
+}
+
+Variable *Parser::add_or_get_variable(Token *token, QType *type) {
+    Variable *var = scope->find_null(token->lexeme);
+    if (var) {
+        if (!typer->compare(var->type, type)) {
+            messenger->report(token, "Variable already defined");
+        }
+        return var;
+    }
+
+    var = create_variable();
+	var->name = token->lexeme;
+	var->type = type;
+	scope->add(token, var);
     return var;
 }

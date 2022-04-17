@@ -72,7 +72,8 @@ void CodeGenerator::gen_func_def(Stmt *stmt) {
 	for (int i = 0; i < stmt->func_def.parameters->size(); i++) {
 		parameter_types[i] = (*stmt->func_def.parameters)[i]->type->llvm_type;
 	}
-	auto fun_type = FunctionType::get(stmt->func_def.return_type->llvm_type, parameter_types, stmt->func_def.isvararg);
+	auto ret_type = gen_return_type(stmt->func_def.return_types);
+	auto fun_type = FunctionType::get(ret_type, parameter_types, stmt->func_def.isvararg);
 	auto linkage = Function::ExternalLinkage;
 
  	auto fn = Function::Create(fun_type, linkage,linkage, stmt->func_def.mangled_name, llvm_module);
@@ -106,7 +107,8 @@ void CodeGenerator::gen_extern_func_def(Stmt *stmt) {
 	for (int i = 0; i < stmt->func_def.parameters->size(); i++) {
 		parameter_types[i] = (*stmt->func_def.parameters)[i]->type->llvm_type;
 	}
-	auto fun_type = FunctionType::get(stmt->func_def.return_type->llvm_type, parameter_types, stmt->func_def.isvararg);
+	auto ret_type = gen_return_type(stmt->func_def.return_types);
+	auto fun_type = FunctionType::get(ret_type, parameter_types, stmt->func_def.isvararg);
 	auto linkage = Function::ExternalLinkage;
 
  	auto fn = Function::Create(fun_type, linkage,linkage, stmt->func_def.unmangled_name, llvm_module);
@@ -126,19 +128,51 @@ void CodeGenerator::gen_var_def(Stmt *stmt) {
 		var->setInitializer(init);
 
 		stmt->var_def.var->llvm_ref = var;
+    } else if (stmt->var_def.flags & VAR_MULTIPLE) {
+	    auto val = gen_expr(stmt->var_def.value);
+	    auto vars = stmt->var_def.vars;
+
+	    for (int i = 0; i < vars->size(); ++i) {
+	        auto var = (*vars)[i];
+	        auto var_ptr = builder->CreateAlloca(var->type->llvm_type);
+            auto var_val = builder->CreateExtractValue(val, i);
+
+            builder->CreateStore(var_val, var_ptr);
+
+            var->llvm_ref = var_ptr;
+        }
 	} else {
 		auto var_ptr = builder->CreateAlloca(stmt->var_def.var->type->llvm_type);
 		auto val = gen_expr(stmt->var_def.value);
 
+		if (val->getType()->isStructTy()) {
+		    val = builder->CreateExtractValue(val, 0);
+        }
+
 		builder->CreateStore(val, var_ptr);
 
 		stmt->var_def.var->llvm_ref = var_ptr;
-	}
+	} 
 }
 
 void CodeGenerator::gen_return(Stmt *stmt) {
-    if (stmt->return_value) {
-	    builder->CreateRet(gen_expr(stmt->return_value));
+    auto return_values = stmt->return_values;
+
+    if (return_values) {
+        if (return_values->size() == 1) {
+            auto val = (*return_values)[0];
+	        builder->CreateRet(gen_expr(val));
+        } else {
+            auto ty = gen_return_type(return_values);
+            auto val = builder->CreateAlloca(ty);
+            Value *ret_val = builder->CreateLoad(val);
+
+            for (int i = 0; i < return_values->size(); ++i) {
+                ret_val = builder->CreateInsertValue(ret_val, gen_expr((*return_values)[i]), i);
+            }
+
+            builder->CreateRet(ret_val);
+        }
     } else {
         builder->CreateRetVoid();
     }
@@ -392,6 +426,27 @@ llvm::Value *CodeGenerator::gen_expr_target(Expr *expr) {
 
     /* unreachable */
     return 0;
+}
+
+Type *CodeGenerator::gen_return_type(std::vector<QType *> *types) {
+    if (types->size() == 1)
+        return (*types)[0]->llvm_type;
+
+	std::vector<Type *> return_types(types->size());
+	for (int i = 0; i < types->size(); i++) {
+		return_types[i] = (*types)[i]->llvm_type;
+	}
+
+    return StructType::get(llvm_context, return_types);
+}
+
+Type *CodeGenerator::gen_return_type(std::vector<Expr *> *types) {
+	std::vector<Type *> return_types(types->size());
+	for (int i = 0; i < types->size(); i++) {
+		return_types[i] = (*types)[i]->type->llvm_type;
+	}
+
+    return StructType::get(llvm_context, return_types);
 }
 
 void CodeGenerator::init_module() {
