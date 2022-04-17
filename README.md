@@ -20,8 +20,8 @@ Multi line comments denoted by /* */
 s8, s16, s32, s64 -> integer types \
 u8, u16, u32, u64 -> unsigned integer types \
 bool -> boolean type \
-string, pointers
-int -> s32
+string, pointers \
+int -> s32 \
 uint -> u32
 
 ### Function Declaration / Definition

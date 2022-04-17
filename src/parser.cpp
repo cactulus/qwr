@@ -106,6 +106,10 @@ Stmt *Parser::parse_stmt() {
         return parse_if();
     }
 
+    if (eat_token_if(TOKEN_WHILE)) {
+        return parse_while();
+    }
+
 	if (eat_token_if(TOKEN_RETURN)) {
 		return parse_return();
 	}
@@ -325,6 +329,19 @@ Stmt *Parser::parse_if() {
     return stmt;
 }
 
+Stmt *Parser::parse_while() {
+    auto stmt = make_stmt(WHILE);
+
+    auto cond = parse_expr();
+    if (!cond->type->isbool()) {
+        cond = make_compare_zero(cond);
+    }
+    
+    stmt->while_.cond = cond;
+    stmt->while_.body = parse_stmt();
+    return stmt;
+}
+
 Stmt *Parser::parse_return() {
     auto return_types = current_function->func_def.return_types;
     std::vector<Expr *> *return_values;
@@ -506,6 +523,9 @@ Expr *Parser::parse_unary() {
         return parse_postfix();
     } else if (eat_token_if('!')) {
         auto target = parse_postfix();
+        if (!target->type->isbool()) {
+            target = make_compare_zero(target);
+        }
 
 		auto expr = make_expr(UNARY, target->type);
         expr->unary.target = target;
@@ -606,6 +626,11 @@ Expr *Parser::parse_primary() {
 	if (eat_token_if(TOKEN_FALSE)) {
 	    auto expr = make_expr(INT_LIT, typer->get("bool"));
 	    expr->int_value = 0;
+	    return expr;
+    }
+
+	if (eat_token_if(TOKEN_NIL)) {
+	    auto expr = make_expr(NIL, typer->make_pointer(typer->get("u8")));
 	    return expr;
     }
 

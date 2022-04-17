@@ -43,6 +43,7 @@ enum ExprKind {
     UNARY,
     DEREF,
     COMPARE_ZERO,
+    NIL,
 };
 
 struct Expr {
@@ -85,6 +86,7 @@ enum StmtKind {
 	VARIABLE_DEFINITION,
 	RETURN,
     IF,
+    WHILE,
     BLOCK,
     EXPR_STMT,
 };
@@ -125,6 +127,11 @@ struct Stmt {
 		    Stmt *then;
 		    Stmt *otherwise;
         } if_;
+
+        struct {
+            Expr *cond;
+            Stmt *body;
+        } while_;
 	};
 };
 
@@ -158,6 +165,7 @@ struct Parser {
 
     Stmt *parse_block();
     Stmt *parse_if();
+    Stmt *parse_while();
 
 	Stmt *parse_return();
 	Stmt *try_parse_atom();

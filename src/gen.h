@@ -6,9 +6,8 @@
 #include <llvm/IR/IRBuilder.h>
 #include <llvm/IR/Value.h>
 
+#include "options.h"
 #include "parser.h"
-
-struct Manager;
 
 struct CodeGenerator {
 	Typer *typer;
@@ -25,6 +24,7 @@ struct CodeGenerator {
 	void gen_var_def(Stmt *stmt);
 	void gen_return(Stmt *stmt);
 	void gen_if(Stmt *stmt);
+	void gen_while(Stmt *stmt);
 	void gen_block(Stmt *stmt);
 	void gen_expr_stmt(Stmt *stmt);
 
@@ -38,6 +38,7 @@ struct CodeGenerator {
 	llvm::Value *gen_string_lit(Expr *expr);
 	llvm::Value *gen_func_call(Expr *expr);
 	llvm::Value *gen_compare_zero(Expr *expr);
+	llvm::Value *gen_nil(Expr *expr);
 
 	llvm::Value *gen_expr_target(Expr *expr);
 
@@ -45,8 +46,8 @@ struct CodeGenerator {
     llvm::Type *gen_return_type(std::vector<Expr *> *types);
 
     void init_module();
-	void output(char *obj_file, u8 flags);
-	void link(char *obj_file, char *exe_file);
+	void output(char *obj_file, Options options);
+	void link(char *obj_file, char *exe_file, Options options);
 	void optimize();
 	void dump();
 };

@@ -32,6 +32,7 @@ const std::unordered_map<StmtKind, gen_stmt_fun> stmt_gen_funs = {
 	{VARIABLE_DEFINITION, (gen_stmt_fun) &CodeGenerator::gen_var_def},
 	{RETURN, (gen_stmt_fun) &CodeGenerator::gen_return},
     {IF, (gen_stmt_fun) &CodeGenerator::gen_if},
+    {WHILE, (gen_stmt_fun) &CodeGenerator::gen_while},
     {BLOCK, (gen_stmt_fun) &CodeGenerator::gen_block},
 	{EXPR_STMT, (gen_stmt_fun) &CodeGenerator::gen_expr_stmt},
 };
@@ -46,6 +47,7 @@ const std::unordered_map<ExprKind, gen_expr_fun> expr_gen_funs = {
 	{STRING_LIT, (gen_expr_fun) &CodeGenerator::gen_string_lit},
 	{FUNCTION_CALL, (gen_expr_fun) &CodeGenerator::gen_func_call},
 	{COMPARE_ZERO, (gen_expr_fun) &CodeGenerator::gen_compare_zero},
+	{NIL, (gen_expr_fun) &CodeGenerator::gen_nil},
 };
 
 std::unordered_map<std::string, Value *> constant_string_literals = {};
@@ -202,6 +204,25 @@ void CodeGenerator::gen_if(Stmt *stmt) {
     }
 }
 
+void CodeGenerator::gen_while(Stmt *stmt) {
+    BasicBlock *cond_block = BasicBlock::Create(llvm_context, "", current_function);
+    BasicBlock *body_block = BasicBlock::Create(llvm_context, "", current_function);
+    BasicBlock *after_block = BasicBlock::Create(llvm_context, "", current_function);
+
+    builder->CreateBr(cond_block);
+    builder->SetInsertPoint(cond_block);
+    Value *cmp = gen_expr(stmt->while_.cond);
+
+    builder->CreateCondBr(cmp, body_block, after_block);
+    builder->SetInsertPoint(body_block);
+
+    gen_stmt(stmt->while_.body);
+
+    builder->CreateBr(cond_block);
+
+    builder->SetInsertPoint(after_block); 
+}
+
 void CodeGenerator::gen_block(Stmt *stmt) {
     for (auto s : *stmt->stmts)
         gen_stmt(s);
@@ -295,6 +316,10 @@ Value *CodeGenerator::gen_binary(Expr *expr) {
 	        new_value = builder->CreateInBoundsGEP(lhs, rhs);
         } else {
 		    new_value = builder->CreateBinOp(op, lhs, rhs);
+        }
+        if (top >= TOKEN_ADD_EQ && top <= TOKEN_MOD_EQ) {
+	        auto target = gen_expr_target(expr->bin.lhs);
+	        builder->CreateStore(new_value, target);
         }
 	}  else if (ttype_is_conditional(top)) {
         new_value = builder->CreateICmp(cmpop, lhs, rhs);
@@ -407,9 +432,18 @@ Value *CodeGenerator::gen_func_call(Expr *expr) {
 
 Value *CodeGenerator::gen_compare_zero(Expr *expr) {
     Value *target = gen_expr(expr->target);
-	Value *zero = ConstantInt::get(typer->get("s32")->llvm_type, 0);
+	Value *zero;
+	if (expr->target->type->ispointer()) {
+	    zero = ConstantPointerNull::get((PointerType *) expr->target->type->llvm_type);
+    } else {
+	    zero = ConstantInt::get(typer->get("s32")->llvm_type, 0);
+    }
 
-    return builder->CreateICmp(CmpInst::Predicate::ICMP_NE, target, zero);
+    return builder->CreateICmp(ICmpInst::Predicate::ICMP_NE, target, zero);
+}
+
+Value *CodeGenerator::gen_nil(Expr *expr) {
+    return ConstantPointerNull::get((PointerType *) expr->type->llvm_type);
 }
 
 llvm::Value *CodeGenerator::gen_expr_target(Expr *expr) {
@@ -496,8 +530,8 @@ void CodeGenerator::init_module() {
     llvm_module->setDataLayout(dl);
 }
 
-void CodeGenerator::output(char *obj_file, u8 flags) {
-    if (flags & OPTIMIZE) {
+void CodeGenerator::output(char *obj_file, Options options) {
+    if (options.flags & OPTIMIZE) {
         optimize();
     }
 
@@ -521,20 +555,29 @@ void CodeGenerator::output(char *obj_file, u8 flags) {
     out->keep();
 }
 
-void CodeGenerator::link(char *obj_file, char *exe_file) {
+void CodeGenerator::link(char *obj_file, char *exe_file, Options options) {
     std::stringstream cmd;
 
 #ifdef _WIN32
 	cmd << "link.exe /out:";
 	cmd << exe_file << " ";
 	cmd << obj_file << " msvcrt.lib";
+
+	for (auto lib : options.libs) {
+	    cmd << lib << " ";
+    }
 #else
 	cmd << "gcc -o ";
 	cmd << exe_file << " ";
     cmd << obj_file;
+
+	for (auto lib : options.libs) {
+	    cmd << " -l" << lib;
+    }
+
 #endif
     
-    std::system("gcc -o examples/test examples/test.o");
+    std::system(cmd.str().c_str());
     std::remove(obj_file);
 }
 
@@ -550,5 +593,5 @@ void CodeGenerator::optimize() {
 }
 
 void CodeGenerator::dump() {
-	llvm_module->print(errs(), 0);
+    // llvm_module->print(errs(), 0);
 }

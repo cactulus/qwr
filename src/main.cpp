@@ -4,11 +4,11 @@
 
 #include "manager.h"
 
-void compile(const char *src_file, u8 flags) {
+void compile(const char *src_file, Options options) {
 	Manager manager;
 	manager.init();
 
-	manager.run(src_file, flags);
+	manager.run(src_file, options);
 }
 
 int main(int argc, char *argv[]) {
@@ -19,22 +19,26 @@ int main(int argc, char *argv[]) {
         return 0;
     }
     const char *src_file = "";
-    u8 flags;
+    Options options;
 
     argc--; argv++;
     while (argc--) {
         char *arg = *argv++;
         
         if (strcmp(arg, "--release") == 0) {
-            flags |= OPTIMIZE;
+            options.flags |= OPTIMIZE;
         } else if (strcmp(arg, "-c") == 0) {
-            flags |= COMPILE_ONLY;
+            options.flags |= COMPILE_ONLY;
+        } else if (strcmp(arg, "-l") == 0) {
+            const char *lib = *argv++;
+            argc--;
+            options.libs.push_back(lib);
         } else {
             src_file = arg;
         }
     }
 
-    compile(src_file, flags);
+    compile(src_file, options);
 
 	return 0;
 }

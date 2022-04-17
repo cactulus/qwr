@@ -1,4 +1,3 @@
-
 #ifndef LEXER_H_
 #define LEXER_H_
 
@@ -34,8 +33,10 @@ enum TokenType {
 	TOKEN_AS,
 	TOKEN_TRUE,
 	TOKEN_FALSE,
+	TOKEN_NIL,
 	TOKEN_IF,
 	TOKEN_ELSE,
+	TOKEN_WHILE,
 };
 
 struct Token {

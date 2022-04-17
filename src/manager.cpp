@@ -22,7 +22,7 @@ void Manager::init() {
 	arena_init();
 }
 
-void Manager::run(const char *src_file, u8 flags) {
+void Manager::run(const char *src_file, Options options) {
 #ifdef DIAGNOSTICS
 	long long parse_time = 0;
 	long long llvm_time = 0;
@@ -83,7 +83,7 @@ void Manager::run(const char *src_file, u8 flags) {
 #endif
 	char *obj_file = change_file_extension(src_file, obj_ext);
 	char *exe_file = change_file_extension(src_file, exe_ext);
-	code_gen.output(obj_file, flags);
+	code_gen.output(obj_file, options);
     code_gen.dump();
 #ifdef DIAGNOSTICS
 	auto end = TIMER_NOW;
@@ -96,8 +96,8 @@ void Manager::run(const char *src_file, u8 flags) {
 	start = TIMER_NOW;
 #endif
 
-    if ((flags & COMPILE_ONLY) == 0) {
-	    code_gen.link(obj_file, exe_file);
+    if ((options.flags & COMPILE_ONLY) == 0) {
+	    code_gen.link(obj_file, exe_file, options);
     }
 
 #ifdef DIAGNOSTICS

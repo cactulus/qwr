@@ -4,10 +4,8 @@
 #include <vector>
 
 #include "gen.h"
+#include "options.h"
 #include "parser.h"
-
-const u8 COMPILE_ONLY = 0x1;
-const u8 OPTIMIZE = 0x2;
 
 struct Manager {
 	CodeGenerator code_gen;
@@ -17,7 +15,7 @@ struct Manager {
 
 	void init();
 
-	void run(const char *src_file, u8 flags);
+	void run(const char *src_file, Options options);
 };
 
 #endif
