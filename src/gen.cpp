@@ -8,11 +8,12 @@
 #include <llvm/Support/FileSystem.h>
 #include <llvm/Support/ToolOutputFile.h>
 #include <llvm/Support/Host.h>
-#include <llvm/Support/TargetRegistry.h>
+#include <llvm/MC/TargetRegistry.h>
 #include <llvm/Support/TargetSelect.h>
 #include <llvm/IR/LegacyPassManager.h>
 #include <llvm/IR/Type.h>
 #include <llvm/IR/DerivedTypes.h>
+#include "llvm/Transforms/IPO.h"
 #include "llvm/Transforms/IPO/PassManagerBuilder.h"
 
 #include "lexer.h"
@@ -167,7 +168,7 @@ void CodeGenerator::gen_return(Stmt *stmt) {
         } else {
             auto ty = gen_return_type(return_values);
             auto val = builder->CreateAlloca(ty);
-            Value *ret_val = builder->CreateLoad(val);
+            Value *ret_val = builder->CreateLoad(ty, val);
 
             for (int i = 0; i < return_values->size(); ++i) {
                 ret_val = builder->CreateInsertValue(ret_val, gen_expr((*return_values)[i]), i);
@@ -244,7 +245,7 @@ Value *CodeGenerator::gen_binary(Expr *expr) {
 	auto top = expr->bin.op;
 	Instruction::BinaryOps op;
 	CmpInst::Predicate cmpop;
-	Value *new_value;
+	Value *new_value = 0;
 	bool is_ptr = expr->type->ispointer();
 
     if (expr->type->isuint() || is_ptr) {
@@ -313,7 +314,7 @@ Value *CodeGenerator::gen_binary(Expr *expr) {
 	    builder->CreateStore(new_value, target);
 	} else if (ttype_is_binary(top) || top >= TOKEN_ADD_EQ && top <= TOKEN_MOD_EQ) {
 	    if (is_ptr) {
-	        new_value = builder->CreateInBoundsGEP(lhs, rhs);
+	        new_value = builder->CreateInBoundsGEP(expr->type->llvm_type, lhs, rhs);
         } else {
 		    new_value = builder->CreateBinOp(op, lhs, rhs);
         }
@@ -535,8 +536,6 @@ void CodeGenerator::output(char *obj_file, Options options) {
         optimize();
     }
 
-    legacy::PassManager pm;
-
     std::error_code std_error;
     auto out = new ToolOutputFile(obj_file, std_error, sys::fs::OF_None);
     if (!out) {
@@ -546,12 +545,19 @@ void CodeGenerator::output(char *obj_file, Options options) {
 
     raw_pwrite_stream *os = &out->os();
 
+#ifdef _WIN32
+    llvm_module->print(*os, nullptr);
+#else
+    legacy::PassManager pm;
+
     if (target_machine->addPassesToEmitFile(pm, *os, nullptr, CodeGenFileType::CGFT_ObjectFile, false)) {
         std::cerr << obj_file << ": target does not support generation of this file type!\n";
         return;
     }
 
     pm.run(*llvm_module);
+#endif
+
     out->keep();
 }
 
@@ -559,9 +565,9 @@ void CodeGenerator::link(char *obj_file, char *exe_file, Options options) {
     std::stringstream cmd;
 
 #ifdef _WIN32
-	cmd << "link.exe /out:";
-	cmd << exe_file << " ";
-	cmd << obj_file << " msvcrt.lib";
+	cmd << "clang -o";
+    cmd << exe_file << " ";
+    cmd << obj_file << " ";
 
 	for (auto lib : options.libs) {
 	    cmd << lib << " ";
@@ -584,7 +590,9 @@ void CodeGenerator::link(char *obj_file, char *exe_file, Options options) {
 void CodeGenerator::optimize() {
     legacy::PassManager *pm = new legacy::PassManager();
     PassManagerBuilder pmb;
+    pmb.Inliner = createFunctionInliningPass(3, 3, false);
     pmb.OptLevel = 3;
+    pmb.SizeLevel = 3;
     pmb.DisableUnrollLoops = false;
     pmb.LoopVectorize = true;
     pmb.SLPVectorize = true;
@@ -593,5 +601,5 @@ void CodeGenerator::optimize() {
 }
 
 void CodeGenerator::dump() {
-    // llvm_module->print(errs(), 0);
+   // llvm_module->print(errs(), 0);
 }

@@ -8,7 +8,11 @@ void compile(const char *src_file, Options options) {
 	Manager manager;
 	manager.init();
 
-	manager.run(src_file, options);
+    try {
+        manager.run(src_file, options);
+    } catch (const char *e) {
+        std::cout << e << "\n";
+    }
 }
 
 int main(int argc, char *argv[]) {

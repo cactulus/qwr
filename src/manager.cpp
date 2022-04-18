@@ -31,7 +31,7 @@ void Manager::run(const char *src_file, Options options) {
 	auto total_start = TIMER_NOW;
 #endif 
 
-	FILE *input_file = fopen(src_file, "r");
+	FILE *input_file = fopen(src_file, "rb");
 	char *code;
 	size_t code_len = read_entire_file(input_file, &code);
 	fclose(input_file);
@@ -71,7 +71,7 @@ void Manager::run(const char *src_file, Options options) {
 	const char *obj_ext;
 	const char *exe_ext;
 #ifdef _WIN32
-        obj_ext = ".obj";
+        obj_ext = ".ll";
         exe_ext = ".exe";
 #else
         obj_ext = ".o";
