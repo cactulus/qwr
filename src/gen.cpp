@@ -8,10 +8,9 @@
 #include <llvm/Support/FileSystem.h>
 #include <llvm/Support/ToolOutputFile.h>
 #include <llvm/Support/Host.h>
-#include <llvm/MC/TargetRegistry.h>
+#include <llvm/Support/TargetRegistry.h>
 #include <llvm/Support/TargetSelect.h>
 #include <llvm/IR/LegacyPassManager.h>
-#include <llvm/IR/Type.h>
 #include <llvm/IR/DerivedTypes.h>
 #include "llvm/Transforms/IPO.h"
 #include "llvm/Transforms/IPO/PassManagerBuilder.h"
@@ -36,6 +35,7 @@ const std::unordered_map<StmtKind, gen_stmt_fun> stmt_gen_funs = {
     {WHILE, (gen_stmt_fun) &CodeGenerator::gen_while},
     {BLOCK, (gen_stmt_fun) &CodeGenerator::gen_block},
 	{EXPR_STMT, (gen_stmt_fun) &CodeGenerator::gen_expr_stmt},
+	{DELETE, (gen_stmt_fun) &CodeGenerator::gen_delete},
 };
 
 const std::unordered_map<ExprKind, gen_expr_fun> expr_gen_funs = {
@@ -49,6 +49,7 @@ const std::unordered_map<ExprKind, gen_expr_fun> expr_gen_funs = {
 	{FUNCTION_CALL, (gen_expr_fun) &CodeGenerator::gen_func_call},
 	{COMPARE_ZERO, (gen_expr_fun) &CodeGenerator::gen_compare_zero},
 	{NIL, (gen_expr_fun) &CodeGenerator::gen_nil},
+	{NEW, (gen_expr_fun) &CodeGenerator::gen_new},
 };
 
 std::unordered_map<std::string, Value *> constant_string_literals = {};
@@ -79,7 +80,7 @@ void CodeGenerator::gen_func_def(Stmt *stmt) {
 	auto fun_type = FunctionType::get(ret_type, parameter_types, stmt->func_def.isvararg);
 	auto linkage = Function::ExternalLinkage;
 
- 	auto fn = Function::Create(fun_type, linkage,linkage, stmt->func_def.mangled_name, llvm_module);
+ 	auto fn = Function::Create(fun_type, linkage, stmt->func_def.mangled_name, llvm_module);
 
     stmt->func_def.llvm_ref = fn;
     current_function = fn;
@@ -114,7 +115,7 @@ void CodeGenerator::gen_extern_func_def(Stmt *stmt) {
 	auto fun_type = FunctionType::get(ret_type, parameter_types, stmt->func_def.isvararg);
 	auto linkage = Function::ExternalLinkage;
 
- 	auto fn = Function::Create(fun_type, linkage,linkage, stmt->func_def.unmangled_name, llvm_module);
+ 	auto fn = Function::Create(fun_type, linkage, stmt->func_def.unmangled_name, llvm_module);
     stmt->func_def.llvm_ref = fn;
 }
 
@@ -231,6 +232,21 @@ void CodeGenerator::gen_block(Stmt *stmt) {
 
 void CodeGenerator::gen_expr_stmt(Stmt *stmt) {
     gen_expr(stmt->target_expr);
+}
+
+void CodeGenerator::gen_delete(Stmt *stmt) {
+    Function *free_fn = llvm_module->getFunction("free");
+    auto ptr_ty = typer->make_pointer(typer->get("u8"))->llvm_type;
+    if (!free_fn) {
+        auto free_fn_type = FunctionType::get(typer->get("void")->llvm_type, {ptr_ty}, false);
+	    auto linkage = Function::ExternalLinkage;
+        free_fn = Function::Create(free_fn_type, linkage, "free", llvm_module);
+    }
+
+    Value *target = gen_expr(stmt->target_expr);
+
+    Value *to_free = builder->CreatePointerCast(target, ptr_ty);
+    builder->CreateCall(free_fn, {to_free});
 }
 
 Value *CodeGenerator::gen_expr(Expr *expr) {
@@ -447,6 +463,23 @@ Value *CodeGenerator::gen_nil(Expr *expr) {
     return ConstantPointerNull::get((PointerType *) expr->type->llvm_type);
 }
 
+Value *CodeGenerator::gen_new(Expr *expr) {
+    auto i64_ty = typer->get("u64")->llvm_type;
+    Function *malloc_fn = llvm_module->getFunction("malloc");
+    if (!malloc_fn) {
+        auto ptr_ty = typer->make_pointer(typer->get("u8"))->llvm_type;
+        auto malloc_fn_type = FunctionType::get(ptr_ty, {i64_ty}, false);
+	    auto linkage = Function::ExternalLinkage;
+        malloc_fn = Function::Create(malloc_fn_type, linkage, "malloc", llvm_module);
+    }
+
+    Type *target_type = expr->alloc_type->llvm_type;
+    Value *type_size = ConstantInt::get(i64_ty, llvm_size_of(target_type));
+
+    Value *mallocd = builder->CreateCall(malloc_fn, {type_size});
+    return builder->CreatePointerCast(mallocd, expr->type->llvm_type);
+}
+
 llvm::Value *CodeGenerator::gen_expr_target(Expr *expr) {
     if (expr->kind == VARIABLE) {
         return expr->var->llvm_ref;
@@ -482,6 +515,11 @@ Type *CodeGenerator::gen_return_type(std::vector<Expr *> *types) {
 	}
 
     return StructType::get(llvm_context, return_types);
+}
+
+int CodeGenerator::llvm_size_of(Type *type) {
+    int size = llvm_module->getDataLayout().getTypeSizeInBits(type);    
+    return size / 8;
 }
 
 void CodeGenerator::init_module() {
@@ -531,27 +569,36 @@ void CodeGenerator::init_module() {
     llvm_module->setDataLayout(dl);
 }
 
-void CodeGenerator::output(char *obj_file, Options options) {
+void CodeGenerator::output(Options options) {
     if (options.flags & OPTIMIZE) {
         optimize();
     }
 
+#ifdef _WIN32
     std::error_code std_error;
-    auto out = new ToolOutputFile(obj_file, std_error, sys::fs::OF_None);
+    auto out = new ToolOutputFile(options.ll_file, std_error, sys::fs::OF_None);
     if (!out) {
-        std::cerr << "Could not open file " << obj_file << "\n";
+        std::cerr << "Could not open file " << options.ll_file << "\n";
         return;
     }
 
     raw_pwrite_stream *os = &out->os();
 
-#ifdef _WIN32
     llvm_module->print(*os, nullptr);
 #else
+    std::error_code std_error;
+    auto out = new ToolOutputFile(options.obj_file, std_error, sys::fs::OF_None);
+    if (!out) {
+        std::cerr << "Could not open file " << options.obj_file << "\n";
+        return;
+    }
+
+    raw_pwrite_stream *os = &out->os();
+
     legacy::PassManager pm;
 
     if (target_machine->addPassesToEmitFile(pm, *os, nullptr, CodeGenFileType::CGFT_ObjectFile, false)) {
-        std::cerr << obj_file << ": target does not support generation of this file type!\n";
+        std::cerr << options.obj_file << ": target does not support generation of this file type!\n";
         return;
     }
 
@@ -561,30 +608,32 @@ void CodeGenerator::output(char *obj_file, Options options) {
     out->keep();
 }
 
-void CodeGenerator::link(char *obj_file, char *exe_file, Options options) {
+void CodeGenerator::link(Options options) {
     std::stringstream cmd;
 
 #ifdef _WIN32
 	cmd << "clang -o";
-    cmd << exe_file << " ";
-    cmd << obj_file << " ";
+    cmd << options.exe_file << " ";
+    cmd << options.ll_file << " ";
 
 	for (auto lib : options.libs) {
 	    cmd << lib << " ";
     }
+
+    std::system(cmd.str().c_str());
+    std::remove(options.ll_file);
 #else
 	cmd << "gcc -o ";
-	cmd << exe_file << " ";
-    cmd << obj_file;
+	cmd << options.exe_file << " ";
+    cmd << options.obj_file;
 
 	for (auto lib : options.libs) {
 	    cmd << " -l" << lib;
     }
 
-#endif
-    
     std::system(cmd.str().c_str());
-    std::remove(obj_file);
+    std::remove(options.obj_file);
+#endif
 }
 
 void CodeGenerator::optimize() {
@@ -600,6 +649,18 @@ void CodeGenerator::optimize() {
     pm->run(*llvm_module);
 }
 
-void CodeGenerator::dump() {
+void CodeGenerator::dump(Options options) {
+    if (options.flags & PRINT_LLVM) {
+        std::error_code std_error;
+        auto out = new ToolOutputFile(options.ll_file, std_error, sys::fs::OF_None);
+        if (!out) {
+            std::cerr << "Could not open file " << options.ll_file << "\n";
+            return;
+        }
+
+        raw_pwrite_stream *os = &out->os();
+        llvm_module->print(*os, nullptr);
+        out->keep();
+    }
    // llvm_module->print(errs(), 0);
 }

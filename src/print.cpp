@@ -14,6 +14,10 @@ const std::unordered_map<TokenType, std::string> keyword_tokens_names = {
 	{TOKEN_IF, "if"},
 	{TOKEN_ELSE, "else"},
 	{TOKEN_WHILE, "while"},
+	{TOKEN_NEW, "new"},
+	{TOKEN_DELETE, "delete"},
+	{TOKEN_ENUM, "enum"},
+	{TOKEN_STRUCT, "struct"},
 };
 
 const std::unordered_map<TokenType, std::string> two_char_tokens_names = {

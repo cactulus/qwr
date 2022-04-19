@@ -19,6 +19,7 @@ struct Variable {
 	const char *name;
 	QType *type;
 	llvm::Value *llvm_ref;
+	bool is_const;
 };
 
 struct Scope {
@@ -44,6 +45,7 @@ enum ExprKind {
     DEREF,
     COMPARE_ZERO,
     NIL,
+    NEW,
 };
 
 struct Expr {
@@ -52,6 +54,7 @@ struct Expr {
 
 	union {
 		Expr *target;
+		QType *alloc_type;
 		Variable *var;
 		long int_value;	
         char *string_lit;
@@ -89,6 +92,7 @@ enum StmtKind {
     WHILE,
     BLOCK,
     EXPR_STMT,
+    DELETE,
 };
 
 const u8 VAR_CONST = 0x1;
@@ -154,11 +158,12 @@ struct Parser {
 	Stmt *parse_top_level_stmt();
 	Stmt *parse_stmt();				
 
+    void parse_enum(Token *name);
 	Stmt *parse_func_def(Token *name);
 	Stmt *parse_extern_func_def(Token *name);
 
 	Stmt *parse_variable_definition(Token *name_token, u8 flags);
-	Stmt *parse_variable_definition_type(Token *name_token, u8 flags, QType *type);
+	Stmt *parse_variable_definition_type(Token *name_token, u8 flags);
     QType *parse_variable_definition_base(Token *name_token, u8 flags, Stmt *stmt);
 
     Stmt *parse_multiple_variable_definition(Token *name_token);
@@ -168,6 +173,7 @@ struct Parser {
     Stmt *parse_while();
 
 	Stmt *parse_return();
+	Stmt *parse_delete();
 	Stmt *try_parse_atom();
 
 	void parse_function_parameters(Stmt *stmt, bool add_to_scope);
@@ -176,6 +182,7 @@ struct Parser {
 	Expr *parse_binary(int prec);
 	Expr *parse_unary();
 	Expr *parse_postfix();
+	Expr *parse_access();
 	Expr *parse_primary();
 
     Expr *cast(Expr *target, QType *to);

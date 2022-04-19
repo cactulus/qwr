@@ -49,22 +49,21 @@ Stmt *Parser::parse_top_level_stmt() {
 
             if (eat_token_if('=')) {
                 return parse_variable_definition(tok, VAR_GLOBAL);
+            } else if (eat_token_if('@')) {
+                return parse_variable_definition(tok, VAR_GLOBAL | VAR_CONST);
             } else {
-                QType *type = parse_type();
-
-                if (lexer.peek_token()->type != '=') {
-                    messenger->report(lexer.peek_token(), "Expected '=' after variable type specifier");
-                }
-
-                lexer.eat_token();
-
-                return parse_variable_definition_type(tok, VAR_GLOBAL, type);
+                return parse_variable_definition_type(tok, VAR_GLOBAL);
             }
         } else if (pt == TOKEN_COLON_COLON) {
             lexer.eat_token();
             lexer.eat_token();
 
-            return parse_func_def(tok);
+            if (eat_token_if(TOKEN_ENUM)) {
+                parse_enum(tok);
+                return parse_top_level_stmt();
+            } else {
+                return parse_func_def(tok);
+            }
         } else {
             messenger->report(lexer.peek_token(2), "Unexpected token");
         }
@@ -114,7 +113,32 @@ Stmt *Parser::parse_stmt() {
 		return parse_return();
 	}
 
+	if (eat_token_if(TOKEN_DELETE)) {
+		return parse_delete();
+	}
+
 	return try_parse_atom();
+}
+
+void Parser::parse_enum(Token *name) {
+	if (!eat_token_if('{')) {
+		messenger->report(lexer.peek_token(), "Expected { after enum name");
+	}
+     
+    auto type = typer->make_type(TYPE_ENUM, 0);
+    typer->insert_custom(name, type);
+    type->categories = new std::vector<const char *>();
+
+    while (!eat_token_if('}')) {
+        auto tok = lexer.peek_token();
+        if (!eat_token_if(TOKEN_ATOM)) {
+            messenger->report(tok, "Only identifiers allowed in enum definition");
+        }
+
+        type->categories->push_back(tok->lexeme);
+
+        eat_token_if(',');
+    }
 }
 
 Stmt *Parser::parse_func_def(Token *name) {
@@ -228,7 +252,15 @@ Stmt *Parser::parse_variable_definition(Token *name_token, u8 flags) {
 	return stmt;
 }
 
-Stmt *Parser::parse_variable_definition_type(Token *name_token, u8 flags, QType *type) {
+Stmt *Parser::parse_variable_definition_type(Token *name_token, u8 flags) {
+    QType *type = parse_type();
+
+    if (lexer.peek_token()->type != '=') {
+        messenger->report(lexer.peek_token(), "Expected '=' after variable type specifier");
+    }
+
+    lexer.eat_token();
+
     auto stmt = make_stmt(VARIABLE_DEFINITION);
 
     auto val_type = parse_variable_definition_base(name_token, flags, stmt);
@@ -249,6 +281,7 @@ QType *Parser::parse_variable_definition_base(Token *name_token, u8 flags, Stmt 
     auto val_type = val_expr->type;
 
 	stmt->var_def.var = make_variable(name_token->lexeme, val_type);
+	stmt->var_def.var->is_const = flags & VAR_CONST;
 	stmt->var_def.value = val_expr;
     stmt->var_def.flags = flags;
 
@@ -383,6 +416,20 @@ Stmt *Parser::parse_return() {
 	return stmt;
 }
 
+Stmt *Parser::parse_delete() {
+    auto stmt = make_stmt(DELETE);
+    auto tok = lexer.peek_token();
+    stmt->target_expr = parse_expr();
+
+    if (!stmt->target_expr->type->ispointer()) {
+        messenger->report(tok, "Can't delete non-pointer");
+    }
+    
+    eat_token_if(';');
+
+    return stmt;
+}
+
 Stmt *Parser::try_parse_atom() {
 	auto atom = lexer.peek_token();
 
@@ -392,17 +439,11 @@ Stmt *Parser::try_parse_atom() {
             lexer.eat_token();
 
             if (eat_token_if('=')) {
-                return parse_variable_definition(atom, false);
+                return parse_variable_definition(atom, 0);
+            } else if (eat_token_if('@')) {
+                return parse_variable_definition(atom, VAR_CONST);
             } else {
-                QType *type = parse_type();
-
-                if (lexer.peek_token()->type != '=') {
-                    messenger->report(lexer.peek_token(), "Expected '=' after variable type specifier");
-                }
-
-                lexer.eat_token();
-
-                return parse_variable_definition_type(atom, false, type);
+                return parse_variable_definition_type(atom, false);
             }
         } else if (lexer.peek_token(1)->type == ',') {
             lexer.eat_token();
@@ -460,6 +501,11 @@ Expr *Parser::parse_binary(int prec) {
         if (ttype_is_assign(tok_type)) {
             if (!expr_is_targatable(lhs)) {
                 messenger->report(tok, "Can't assign value to this expression");
+            }
+            if (lhs->kind == VARIABLE) {
+                if (lhs->var->is_const) {
+                    messenger->report(tok, "Can't assign value to constant variable");
+                }
             }
         }
 
@@ -546,7 +592,7 @@ Expr *Parser::parse_unary() {
 }
 
 Expr *Parser::parse_postfix() {
-    auto expr = parse_primary();
+    auto expr = parse_access();
 
     if (eat_token_if(TOKEN_AS)) {
         auto type = parse_type();
@@ -555,6 +601,20 @@ Expr *Parser::parse_postfix() {
     }
 
     return expr;
+}
+
+Expr *Parser::parse_access() {
+    auto e = parse_primary();
+
+    /* struct
+    if (is_targatable(e)) {
+        if (eat_token_if('.')) {
+            auto indices = new std::vector<int>();
+            auto ty = e->type;
+        }
+    } */ 
+
+    return e;
 }
 
 Expr *Parser::parse_primary() {
@@ -610,12 +670,42 @@ Expr *Parser::parse_primary() {
             return expr;
         }
 
+        if (eat_token_if('.') && typer->has(tok->lexeme)) {
+            auto ty = typer->get(tok->lexeme);
+            if (!ty->isenum()) {
+                messenger->report(tok, "Can't access non enum type by <Type>.");
+            }
+
+            auto category = lexer.peek_token();
+            if (!eat_token_if(TOKEN_ATOM)) {
+                messenger->report(category, "Expected identifier token to access enum");
+            }
+
+            auto categories = *ty->categories;
+            for (int i = 0; i < categories.size(); ++i) {
+                if (strcmp(categories[i], category->lexeme) == 0) {
+                    auto expr = make_expr(INT_LIT, typer->get("s32"));
+                    expr->int_value = i;
+                    return expr;
+                }
+            }
+
+            messenger->report(category, "Value not found in enum");
+        }
+
 		auto var = scope->find(tok);
 		auto expr = make_expr(VARIABLE, var->type);
 		expr->var = var;
 
 		return expr;
 	}
+
+	if (eat_token_if(TOKEN_NEW)) {
+	    auto ty = parse_type();
+	    auto expr = make_expr(NEW, typer->make_pointer(ty));
+	    expr->alloc_type = ty;
+	    return expr;
+    }
 
 	if (eat_token_if(TOKEN_TRUE)) {
 	    auto expr = make_expr(INT_LIT, typer->get("bool"));
@@ -667,7 +757,7 @@ QType *Parser::parse_type() {
 }
 
 bool Parser::expr_is_targatable(Expr *expr) {
-    return expr->kind == VARIABLE || expr->kind == DEREF;
+    return expr->kind == VARIABLE || expr->kind == DEREF; 
 }
 
 bool Parser::token_is_op(char op, int off) {

@@ -5,6 +5,7 @@
 #include <llvm/Target/TargetMachine.h>
 #include <llvm/IR/IRBuilder.h>
 #include <llvm/IR/Value.h>
+#include <llvm/IR/Type.h>
 
 #include "options.h"
 #include "parser.h"
@@ -27,6 +28,7 @@ struct CodeGenerator {
 	void gen_while(Stmt *stmt);
 	void gen_block(Stmt *stmt);
 	void gen_expr_stmt(Stmt *stmt);
+	void gen_delete(Stmt *stmt);
 
 	llvm::Value *gen_expr(Expr *expr);
 	llvm::Value *gen_binary(Expr *expr);
@@ -39,17 +41,20 @@ struct CodeGenerator {
 	llvm::Value *gen_func_call(Expr *expr);
 	llvm::Value *gen_compare_zero(Expr *expr);
 	llvm::Value *gen_nil(Expr *expr);
+	llvm::Value *gen_new(Expr *expr);
 
 	llvm::Value *gen_expr_target(Expr *expr);
 
     llvm::Type *gen_return_type(std::vector<QType *> *types);
     llvm::Type *gen_return_type(std::vector<Expr *> *types);
 
+    int llvm_size_of(llvm::Type *type);
+
     void init_module();
-	void output(char *obj_file, Options options);
-	void link(char *obj_file, char *exe_file, Options options);
+	void output(Options options);
+	void link(Options options);
 	void optimize();
-	void dump();
+	void dump(Options options);
 };
 
 #endif

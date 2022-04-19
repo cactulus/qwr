@@ -8,18 +8,23 @@ print :: (v: *u8) {
     printf("%s\n", v);
 }
 
-sub :: (a: s32, b: s32) s32, s32 {
-    return a - b, b - a;
+Weekday :: enum {
+    Monday,
+    Tuesday,
+    Wednesday,
+    Thursday,
+    Friday,
+    Saturday,
+    Sunday,
 }
 
 main :: () int {
-    a := 8;
-
-    while a < 20 {
-        print(a);
-
-        a += 1;
-    }
+    print(Weekday.Monday);
+    print(Weekday.Tuesday);
+    print(Weekday.Wednesday);
+    print(Weekday.Friday);
+    print(Weekday.Saturday);
+    print(Weekday.Sunday);
 
     return 0;
 }

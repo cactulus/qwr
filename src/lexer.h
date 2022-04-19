@@ -37,6 +37,10 @@ enum TokenType {
 	TOKEN_IF,
 	TOKEN_ELSE,
 	TOKEN_WHILE,
+	TOKEN_NEW,
+	TOKEN_DELETE,
+	TOKEN_ENUM,
+	TOKEN_STRUCT,
 };
 
 struct Token {

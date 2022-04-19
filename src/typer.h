@@ -26,17 +26,23 @@ enum QBaseType {
 	TYPE_UINT32,
 	TYPE_UINT64,
 	TYPE_BOOL,
+	TYPE_ENUM,
 };
 
 struct QType {
 	QBaseType base;
-	QType *element_type;
 	llvm::Type *llvm_type;
+
+	union {
+	    QType *element_type;
+        std::vector<const char *> *categories;
+    };
 
 	bool isint();
 	bool isuint();
 	bool ispointer();
     bool isbool();
+    bool isenum();
 };
 
 struct Typer {
@@ -47,11 +53,15 @@ struct Typer {
 
 	void init(llvm::LLVMContext *_llvm_context, Messenger *_messenger);
 	
-	void insert(const char *type_str, QType *type);
+	void insert_builtin(const char *type_str, QType *type);
+	void insert_custom(Token *token, QType *type);
 	QType *make_pointer(QType *type);
+	QType *make_type(QBaseType base, llvm::Type *llvm_type);
 
 	QType *get(Token *type_token);
 	QType *get(const char *type_str);
+
+	bool has(const char *type_str);
 
 	bool can_convert(QType *from, QType *to);
 	bool compare(QType *type1, QType *type2);

@@ -15,7 +15,7 @@ struct Manager {
 
 	void init();
 
-	void run(const char *src_file, Options options);
+	void run(Options options);
 };
 
 #endif

@@ -19,7 +19,7 @@ static bool is_not_quote(char c);
 
 char *escape_str_lit(char *text);
 
-const char *operator_chars = "+-=*/();,.{}&|:<>![]";
+const char *operator_chars = "+-=*/();,.{}&|:<>![]@";
 
 const std::unordered_map<std::string, TokenType> keyword_tokens = {
 	{"return", TOKEN_RETURN},
@@ -31,6 +31,10 @@ const std::unordered_map<std::string, TokenType> keyword_tokens = {
 	{"if", TOKEN_IF},
 	{"else", TOKEN_ELSE},
 	{"while", TOKEN_WHILE},
+	{"new", TOKEN_NEW},
+	{"delete", TOKEN_DELETE},
+	{"enum", TOKEN_ENUM},
+	{"struct", TOKEN_STRUCT},
 };
 
 const std::unordered_map<std::string, TokenType> two_char_tokens = {

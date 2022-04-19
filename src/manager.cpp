@@ -12,7 +12,6 @@
 #include "arena.h"
 
 size_t read_entire_file(FILE *f, char **contents);
-char *change_file_extension(const char *filename, const char *extension);
 
 void Manager::init() {
 	parser.init(&typer, &messenger);
@@ -22,7 +21,7 @@ void Manager::init() {
 	arena_init();
 }
 
-void Manager::run(const char *src_file, Options options) {
+void Manager::run(Options options) {
 #ifdef DIAGNOSTICS
 	long long parse_time = 0;
 	long long llvm_time = 0;
@@ -31,7 +30,12 @@ void Manager::run(const char *src_file, Options options) {
 	auto total_start = TIMER_NOW;
 #endif 
 
-	FILE *input_file = fopen(src_file, "rb");
+	FILE *input_file = fopen(options.src_file, "rb");
+	if (!input_file) {
+        std::cout << "Failed to open file " << options.src_file << "\n";
+        return;
+    }
+
 	char *code;
 	size_t code_len = read_entire_file(input_file, &code);
 	fclose(input_file);
@@ -68,23 +72,14 @@ void Manager::run(const char *src_file, Options options) {
 		llvm_time += diff;
 #endif 
 	}
-	const char *obj_ext;
-	const char *exe_ext;
-#ifdef _WIN32
-        obj_ext = ".ll";
-        exe_ext = ".exe";
-#else
-        obj_ext = ".o";
-        exe_ext = "";
-#endif
 
 #ifdef DIAGNOSTICS
 	auto start = TIMER_NOW;
 #endif
-	char *obj_file = change_file_extension(src_file, obj_ext);
-	char *exe_file = change_file_extension(src_file, exe_ext);
-	code_gen.output(obj_file, options);
-    code_gen.dump();
+
+	code_gen.output(options);
+    code_gen.dump(options);
+
 #ifdef DIAGNOSTICS
 	auto end = TIMER_NOW;
 	auto diff = TIMER_DIFF(start, end);
@@ -97,7 +92,7 @@ void Manager::run(const char *src_file, Options options) {
 #endif
 
     if ((options.flags & COMPILE_ONLY) == 0) {
-	    code_gen.link(obj_file, exe_file, options);
+	    code_gen.link(options);
     }
 
 #ifdef DIAGNOSTICS
@@ -108,7 +103,7 @@ void Manager::run(const char *src_file, Options options) {
     auto total_end = std::chrono::steady_clock::now();
     auto total_time = TIMER_DIFF(total_start, total_end);
 
-    std::ifstream file_stream(src_file); 
+    std::ifstream file_stream(options.src_file); 
     auto loc = std::count(std::istreambuf_iterator<char>(file_stream), 
              std::istreambuf_iterator<char>(), '\n');
 
@@ -135,15 +130,4 @@ size_t read_entire_file(FILE *f, char **contents) {
 	*contents = buffer;
 
 	return len;
-}
-
-char *change_file_extension(const char *filename, const char *extension) {
-	char *new_filename = new char[strlen(filename) + strlen(extension) + 1];
-	strcpy(new_filename, filename);
-	char *dot = strrchr(new_filename, '.');
-	if (dot) {
-		*dot = '\0';
-	}
-	strcat(new_filename, extension);
-	return new_filename;
 }
