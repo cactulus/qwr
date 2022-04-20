@@ -27,7 +27,11 @@ enum QBaseType {
 	TYPE_UINT64,
 	TYPE_BOOL,
 	TYPE_ENUM,
+	TYPE_STRUCT,
 };
+
+struct QType;
+typedef std::vector<std::pair<const char *, QType *>> struct_fields_type;
 
 struct QType {
 	QBaseType base;
@@ -36,6 +40,7 @@ struct QType {
 	union {
 	    QType *element_type;
         std::vector<const char *> *categories;
+        struct_fields_type *fields;
     };
 
 	bool isint();
@@ -43,6 +48,7 @@ struct QType {
 	bool ispointer();
     bool isbool();
     bool isenum();
+    bool isstruct();
 };
 
 struct Typer {
@@ -56,6 +62,7 @@ struct Typer {
 	void insert_builtin(const char *type_str, QType *type);
 	void insert_custom(Token *token, QType *type);
 	QType *make_pointer(QType *type);
+	QType *make_struct(const char *name, struct_fields_type *fields);
 	QType *make_type(QBaseType base, llvm::Type *llvm_type);
 
 	QType *get(Token *type_token);

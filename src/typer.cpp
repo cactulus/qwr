@@ -27,6 +27,10 @@ bool QType::isenum() {
     return base == TYPE_ENUM;
 }
 
+bool QType::isstruct() {
+    return base == TYPE_STRUCT;
+}
+
 void Typer::init(LLVMContext *_llvm_context, Messenger *_messenger) {
 	llvm_context = _llvm_context;
 	messenger = _messenger;
@@ -61,6 +65,29 @@ QType *Typer::make_pointer(QType *type) {
 	QType *ptty = make_type(TYPE_POINTER, (Type *) PointerType::get(type->llvm_type, 0));
 	ptty->element_type = type;
 	return ptty;
+}
+
+QType *Typer::make_struct(const char *name, struct_fields_type *fields) {
+    std::vector<Type *> llvm_fields;
+
+    for (auto field : *fields) {
+        llvm_fields.push_back(field.second->llvm_type);
+    }
+
+    auto sty = StructType::create(*llvm_context, name);
+    sty->setBody(llvm_fields);
+    
+    auto ty = make_type(TYPE_STRUCT, sty);
+    ty->fields = fields;
+
+    return ty;
+}
+
+QType *Typer::make_type(QBaseType base, Type *llvm_type) {
+	auto ty = new QType();
+	ty->base = base;
+	ty->llvm_type = llvm_type;
+	return ty;
 }
 
 QType *Typer::get(Token *type_token) {
@@ -108,11 +135,4 @@ bool Typer::compare(QType *type1, QType *type2) {
         return true;
 
     return b1 == b2;
-}
-
-QType *Typer::make_type(QBaseType base, Type *llvm_type) {
-	auto ty = new QType();
-	ty->base = base;
-	ty->llvm_type = llvm_type;
-	return ty;
 }

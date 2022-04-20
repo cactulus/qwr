@@ -50,6 +50,7 @@ const std::unordered_map<ExprKind, gen_expr_fun> expr_gen_funs = {
 	{COMPARE_ZERO, (gen_expr_fun) &CodeGenerator::gen_compare_zero},
 	{NIL, (gen_expr_fun) &CodeGenerator::gen_nil},
 	{NEW, (gen_expr_fun) &CodeGenerator::gen_new},
+	{MEMBER, (gen_expr_fun) &CodeGenerator::gen_member},
 };
 
 std::unordered_map<std::string, Value *> constant_string_literals = {};
@@ -147,13 +148,15 @@ void CodeGenerator::gen_var_def(Stmt *stmt) {
         }
 	} else {
 		auto var_ptr = builder->CreateAlloca(stmt->var_def.var->type->llvm_type);
-		auto val = gen_expr(stmt->var_def.value);
+		if (stmt->var_def.value) {
+            auto val = gen_expr(stmt->var_def.value);
 
-		if (val->getType()->isStructTy()) {
-		    val = builder->CreateExtractValue(val, 0);
+            if (val->getType()->isStructTy()) {
+                val = builder->CreateExtractValue(val, 0);
+            }
+
+            builder->CreateStore(val, var_ptr);
         }
-
-		builder->CreateStore(val, var_ptr);
 
 		stmt->var_def.var->llvm_ref = var_ptr;
 	} 
@@ -480,7 +483,11 @@ Value *CodeGenerator::gen_new(Expr *expr) {
     return builder->CreatePointerCast(mallocd, expr->type->llvm_type);
 }
 
-llvm::Value *CodeGenerator::gen_expr_target(Expr *expr) {
+Value *CodeGenerator::gen_member(Expr *expr) {
+    return builder->CreateLoad(expr->type->llvm_type, gen_expr_target(expr));
+}
+
+Value *CodeGenerator::gen_expr_target(Expr *expr) {
     if (expr->kind == VARIABLE) {
         return expr->var->llvm_ref;
     }
@@ -490,6 +497,25 @@ llvm::Value *CodeGenerator::gen_expr_target(Expr *expr) {
         auto type = expr->target->type->llvm_type;
 
         return builder->CreateLoad(type, target);
+    }
+
+    if (expr->kind == MEMBER) {
+        auto target = gen_expr_target(expr->member.target);
+		auto i32_ty = typer->get("s32")->llvm_type;
+		auto indices = *expr->member.indices;
+
+		for (int i = 0; i < indices.size(); ++i) {
+			auto index = indices[i];
+			auto llvm_zero = ConstantInt::get(i32_ty, 0);
+			auto llvm_index = ConstantInt::get(i32_ty, index);
+
+			if ((*expr->member.dereferences)[i]) {
+				target = builder->CreateLoad(target);
+			}
+			target = builder->CreateInBoundsGEP(target, {llvm_zero, llvm_index});
+		}
+
+		return target;
     }
 
     /* unreachable */

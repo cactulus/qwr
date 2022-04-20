@@ -46,6 +46,7 @@ enum ExprKind {
     COMPARE_ZERO,
     NIL,
     NEW,
+    MEMBER,
 };
 
 struct Expr {
@@ -80,6 +81,12 @@ struct Expr {
             Expr *target;
             unsigned char op;
         } unary;
+
+        struct {
+            Expr *target;
+            std::vector<int> *indices;
+            std::vector<bool> *dereferences;
+        } member;
 	};
 };
 
@@ -159,6 +166,7 @@ struct Parser {
 	Stmt *parse_stmt();				
 
     void parse_enum(Token *name);
+    void parse_struct(Token *name);
 	Stmt *parse_func_def(Token *name);
 	Stmt *parse_extern_func_def(Token *name);
 
@@ -180,9 +188,9 @@ struct Parser {
 
 	Expr *parse_expr(int prec=1);
 	Expr *parse_binary(int prec);
+	Expr *parse_access();
 	Expr *parse_unary();
 	Expr *parse_postfix();
-	Expr *parse_access();
 	Expr *parse_primary();
 
     Expr *cast(Expr *target, QType *to);

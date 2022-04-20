@@ -61,6 +61,9 @@ Stmt *Parser::parse_top_level_stmt() {
             if (eat_token_if(TOKEN_ENUM)) {
                 parse_enum(tok);
                 return parse_top_level_stmt();
+            } else if (eat_token_if(TOKEN_STRUCT)) {
+                parse_struct(tok);
+                return parse_top_level_stmt();
             } else {
                 return parse_func_def(tok);
             }
@@ -139,6 +142,34 @@ void Parser::parse_enum(Token *name) {
 
         eat_token_if(',');
     }
+}
+
+void Parser::parse_struct(Token *name) {
+	if (!eat_token_if('{')) {
+		messenger->report(lexer.peek_token(), "Expected { after struct name");
+	}
+     
+    auto fields = new struct_fields_type();
+
+    while (!eat_token_if('}')) {
+        auto tok = lexer.peek_token();
+        if (!eat_token_if(TOKEN_ATOM)) {
+            messenger->report(tok, "Expected identifier");
+        }
+
+		if (!eat_token_if(':')) {
+			messenger->report(lexer.peek_token(), "Expected : after struct field name");
+		}
+
+        auto fty = parse_type();
+
+        fields->push_back(std::make_pair(tok->lexeme, fty));
+
+        eat_token_if(',');
+    }
+
+    auto type = typer->make_struct(name->lexeme, fields);
+    typer->insert_custom(name, type);
 }
 
 Stmt *Parser::parse_func_def(Token *name) {
@@ -254,6 +285,19 @@ Stmt *Parser::parse_variable_definition(Token *name_token, u8 flags) {
 
 Stmt *Parser::parse_variable_definition_type(Token *name_token, u8 flags) {
     QType *type = parse_type();
+
+    if (eat_token_if(';')) {
+        auto stmt = make_stmt(VARIABLE_DEFINITION);
+        stmt->var_def.var = make_variable(name_token->lexeme, type);
+        stmt->var_def.var->is_const = flags & VAR_CONST;
+        stmt->var_def.value = 0;
+        stmt->var_def.flags = flags;
+
+        scope->add(name_token, stmt->var_def.var);
+
+        eat_semicolon();
+        return stmt;
+    }
 
     if (lexer.peek_token()->type != '=') {
         messenger->report(lexer.peek_token(), "Expected '=' after variable type specifier");
@@ -465,7 +509,7 @@ Expr *Parser::parse_expr(int prec) {
 }
 
 Expr *Parser::parse_binary(int prec) {
-	auto lhs = parse_unary();
+	auto lhs = parse_access();
 
 	while (true) {
 		auto tok = lexer.peek_token();
@@ -536,6 +580,59 @@ Expr *Parser::parse_binary(int prec) {
 	return lhs;
 }
 
+Expr *Parser::parse_access() {
+    auto e = parse_unary();
+
+    if (!expr_is_targatable(e) || lexer.peek_token()->type != '.') {
+        return e;
+    }
+
+    auto ty = e->type;
+
+    auto indices = new std::vector<int>();
+    auto dereferences = new std::vector<bool>();
+
+    while (eat_token_if('.')) {
+        bool dereference = false;
+
+        if (ty->isstruct()) {
+            ;
+        } else if (ty->ispointer() && ty->element_type->isstruct()) {
+            dereference = true;
+            ty = ty->element_type;
+        } else {
+            messenger->report(lexer.peek_token(), "Expected struct type before '.'");
+        }
+
+        auto mem_token = lexer.peek_token();
+        if (!eat_token_if(TOKEN_ATOM)) {
+            messenger->report(mem_token, "Expected identifier");
+        }
+
+        int i = 0;
+        bool found = false;
+        for (auto field : *ty->fields) {
+            if (strcmp(field.first, mem_token->lexeme) == 0) {
+                dereferences->push_back(dereference);
+                indices->push_back(i);
+                ty = field.second;
+                found = true;
+                break;
+            }
+            i++;
+        }
+        if (!found) {
+            messenger->report(mem_token, "Member with that name doesn't exist");
+        }
+    }
+
+    auto expr = make_expr(MEMBER, ty);
+    expr->member.target = e;
+    expr->member.indices = indices;
+    expr->member.dereferences = dereferences;
+    return expr;
+}
+
 Expr *Parser::parse_unary() {
     auto tok = lexer.peek_token();
 
@@ -592,7 +689,7 @@ Expr *Parser::parse_unary() {
 }
 
 Expr *Parser::parse_postfix() {
-    auto expr = parse_access();
+    auto expr = parse_primary();
 
     if (eat_token_if(TOKEN_AS)) {
         auto type = parse_type();
@@ -601,20 +698,6 @@ Expr *Parser::parse_postfix() {
     }
 
     return expr;
-}
-
-Expr *Parser::parse_access() {
-    auto e = parse_primary();
-
-    /* struct
-    if (is_targatable(e)) {
-        if (eat_token_if('.')) {
-            auto indices = new std::vector<int>();
-            auto ty = e->type;
-        }
-    } */ 
-
-    return e;
 }
 
 Expr *Parser::parse_primary() {
@@ -670,7 +753,7 @@ Expr *Parser::parse_primary() {
             return expr;
         }
 
-        if (eat_token_if('.') && typer->has(tok->lexeme)) {
+        if (eat_token_if(TOKEN_COLON_COLON)) {
             auto ty = typer->get(tok->lexeme);
             if (!ty->isenum()) {
                 messenger->report(tok, "Can't access non enum type by <Type>.");
@@ -757,7 +840,7 @@ QType *Parser::parse_type() {
 }
 
 bool Parser::expr_is_targatable(Expr *expr) {
-    return expr->kind == VARIABLE || expr->kind == DEREF; 
+    return expr->kind == VARIABLE || expr->kind == DEREF || expr->kind == MEMBER;
 }
 
 bool Parser::token_is_op(char op, int off) {

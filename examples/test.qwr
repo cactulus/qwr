@@ -8,23 +8,68 @@ print :: (v: *u8) {
     printf("%s\n", v);
 }
 
-Weekday :: enum {
-    Monday,
-    Tuesday,
-    Wednesday,
-    Thursday,
-    Friday,
-    Saturday,
-    Sunday,
+Weekdays :: enum {
+	MONDAY,
+	TUESDAY,
+	WEDNESDAY
+}
+
+Box :: struct {
+	a: int,
+	b: int
+}
+
+Person :: struct {
+	name: *u8,
+	age: int,
+	fav_day: int
+}
+
+SIX :@ 6;
+
+add :: (a: int, b: int) int {
+	return a + b;
 }
 
 main :: () int {
-    print(Weekday.Monday);
-    print(Weekday.Tuesday);
-    print(Weekday.Wednesday);
-    print(Weekday.Friday);
-    print(Weekday.Saturday);
-    print(Weekday.Sunday);
+	a := 20; // infer type
+	b: int = 10; // specify type
+	c := add(5, 1);
 
-    return 0;
+	print(a);
+	print(b);
+	print(c);
+
+	d := &c;
+	e := *d;
+
+	printf("%p\n", d);
+    print(e);
+
+	lol := 12931;
+
+	print(lol);
+	
+	a += 5;
+	print(a);
+	
+	box: Box;
+	box.a = 10;
+	box.b = 20;
+
+	printf("Box %d %d\n", box.a, box.b);
+
+	// let box2: Box = {5, 2}; // init ((we dont have that yet)) 
+	// printf("Box2 %d %d\n", box2.a, box2.b);
+	
+	peter := new Person;
+	peter.name = "Peter";
+	peter.age = 19;
+	peter.fav_day = Weekdays::TUESDAY;
+
+	printf("Person: '%s' %d %d\n", peter.name, peter.age, peter.fav_day);
+
+	delete peter; // free allocated memory
+
+	return 0;
 }

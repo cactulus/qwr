@@ -42,6 +42,7 @@ struct CodeGenerator {
 	llvm::Value *gen_compare_zero(Expr *expr);
 	llvm::Value *gen_nil(Expr *expr);
 	llvm::Value *gen_new(Expr *expr);
+	llvm::Value *gen_member(Expr *expr);
 
 	llvm::Value *gen_expr_target(Expr *expr);
 
