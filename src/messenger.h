@@ -6,7 +6,7 @@
 struct Messenger {
 	std::vector<std::string> code_lines;
 
-	void init(char *code);
+	void init(const char *code);
 
 	void error(Token *token);
 

@@ -1,12 +1,4 @@
-extern printf :: (fmt: *u8, ..) s32;
-
-print :: (v: int) {
-    printf("%d\n", v);
-}
-
-print :: (v: *u8) {
-    printf("%s\n", v);
-}
+use "io";
 
 Weekdays :: enum {
 	MONDAY,

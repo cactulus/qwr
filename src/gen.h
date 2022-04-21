@@ -52,10 +52,10 @@ struct CodeGenerator {
     int llvm_size_of(llvm::Type *type);
 
     void init_module();
-	void output(Options options);
-	void link(Options options);
+	void output(Options *options);
+	void link(Options *options);
 	void optimize();
-	void dump(Options options);
+	void dump(Options *options);
 };
 
 #endif

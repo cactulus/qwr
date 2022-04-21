@@ -4,11 +4,20 @@
 #include <iostream>
 #include <unordered_map>
 #include <string>
+#include <stack>
 
 #include "lexer.h"
 #include "arena.h"
 
-static int read_xchars(Lexer *l, char **output, bool (*check) (char c));
+struct LexerInfo {
+    const char *input;
+    int input_len;
+    int line;
+    int col;
+    int pos;
+};
+
+static int read_xchars(Lexer *l, const char **output, bool (*check) (char c));
 static void read_atom_or_keyword(Lexer *l, Token *t);
 static void read_int_lit(Lexer *l, Token *t);
 static void read_string_lit(Lexer *l, Token *t);
@@ -17,9 +26,11 @@ static bool is_ident_char(char c);
 static bool is_digit(char c);
 static bool is_not_quote(char c);
 
-char *escape_str_lit(char *text);
+const char *escape_str_lit(const char *text);
 
 const char *operator_chars = "+-=*/();,.{}&|:<>![]@";
+
+static std::stack<LexerInfo> backups;
 
 const std::unordered_map<std::string, TokenType> keyword_tokens = {
 	{"return", TOKEN_RETURN},
@@ -35,6 +46,8 @@ const std::unordered_map<std::string, TokenType> keyword_tokens = {
 	{"delete", TOKEN_DELETE},
 	{"enum", TOKEN_ENUM},
 	{"struct", TOKEN_STRUCT},
+	{"use", TOKEN_USE},
+	{"qwr", TOKEN_QWR},
 };
 
 const std::unordered_map<std::string, TokenType> two_char_tokens = {
@@ -53,7 +66,8 @@ const std::unordered_map<std::string, TokenType> two_char_tokens = {
 	{"||", TOKEN_BAR_BAR},
 }; 
 
-void Lexer::init(char *code, int code_len) {
+void Lexer::init(const char *code, int code_len) {
+	tokens.clear();
 	input = code;
 	input_len = code_len;
 	col = 0;
@@ -185,7 +199,7 @@ void Lexer::eat_char() {
 	pos++;
 }
 
-int read_xchars(Lexer *l, char **output, bool (*check) (char c)) {
+int read_xchars(Lexer *l, const char **output, bool (*check) (char c)) {
 	auto start_pos = l->pos;
 	auto c = l->peek_char();
 
@@ -205,7 +219,7 @@ int read_xchars(Lexer *l, char **output, bool (*check) (char c)) {
 }
 
 void read_atom_or_keyword(Lexer *l, Token *t) {
-	char *lexeme;
+	const char *lexeme;
 	read_xchars(l, &lexeme, is_ident_char);
 
 	auto it = keyword_tokens.find(std::string(lexeme));
@@ -218,7 +232,7 @@ void read_atom_or_keyword(Lexer *l, Token *t) {
 }
 
 void read_int_lit(Lexer *l, Token *t) {
-	char *num;
+	const char *num;
 	read_xchars(l, &num, is_digit);
 
 	t->type = TOKEN_INT_LIT;
@@ -227,7 +241,7 @@ void read_int_lit(Lexer *l, Token *t) {
 
 void read_string_lit(Lexer *l, Token *t) {
     l->eat_char();
-    char *lit;
+    const char *lit;
     int lit_len = read_xchars(l, &lit, is_not_quote);
     l->eat_char();
 
@@ -247,7 +261,7 @@ bool is_not_quote(char c) {
     return c != '"';
 }
 
-char *escape_str_lit(char *text) {
+const char *escape_str_lit(const char *text) {
     int sl = strlen(text), nl = sl, i;
     char *etext;
 
@@ -293,6 +307,32 @@ char *escape_str_lit(char *text) {
 
     etext[nl] = '\0';
     return etext;
+}
+
+void Lexer::backup() {
+    LexerInfo info;
+
+    info.input = input;
+    info.input_len = input_len;
+    info.line = line;
+    info.col = col;
+    info.pos = pos;
+
+    backups.push(info);
+}
+
+void Lexer::restore() {
+    LexerInfo info = backups.top();
+
+    tokens.clear();
+    input = info.input;
+    input_len = info.input_len;
+    line = info.line;
+    col = info.col;
+    pos = info.pos;
+    token_index = 0;
+
+    backups.pop();
 }
 
 bool ttype_is_binary(int type) {

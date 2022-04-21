@@ -18,6 +18,8 @@ const std::unordered_map<TokenType, std::string> keyword_tokens_names = {
 	{TOKEN_DELETE, "delete"},
 	{TOKEN_ENUM, "enum"},
 	{TOKEN_STRUCT, "struct"},
+	{TOKEN_USE, "use"},
+	{TOKEN_QWR, "qwr"},
 };
 
 const std::unordered_map<TokenType, std::string> two_char_tokens_names = {

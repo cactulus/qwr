@@ -12,6 +12,7 @@ const u8 DEBUG = 0x4;
 const u8 PRINT_LLVM = 0x8;
 
 struct Options {
+    std::vector<const char *> linker_flags;
     std::vector<const char *> libs;
     const char *src_file;
     const char *ll_file;

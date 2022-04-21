@@ -58,7 +58,7 @@ struct Expr {
 		QType *alloc_type;
 		Variable *var;
 		long int_value;	
-        char *string_lit;
+        const char *string_lit;
 
 		struct {
 			Expr *lhs;

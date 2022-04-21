@@ -595,16 +595,16 @@ void CodeGenerator::init_module() {
     llvm_module->setDataLayout(dl);
 }
 
-void CodeGenerator::output(Options options) {
-    if (options.flags & OPTIMIZE) {
+void CodeGenerator::output(Options *options) {
+    if (options->flags & OPTIMIZE) {
         optimize();
     }
 
 #ifdef _WIN32
     std::error_code std_error;
-    auto out = new ToolOutputFile(options.ll_file, std_error, sys::fs::OF_None);
+    auto out = new ToolOutputFile(options->ll_file, std_error, sys::fs::OF_None);
     if (!out) {
-        std::cerr << "Could not open file " << options.ll_file << "\n";
+        std::cerr << "Could not open file " << options->ll_file << "\n";
         return;
     }
 
@@ -613,9 +613,9 @@ void CodeGenerator::output(Options options) {
     llvm_module->print(*os, nullptr);
 #else
     std::error_code std_error;
-    auto out = new ToolOutputFile(options.obj_file, std_error, sys::fs::OF_None);
+    auto out = new ToolOutputFile(options->obj_file, std_error, sys::fs::OF_None);
     if (!out) {
-        std::cerr << "Could not open file " << options.obj_file << "\n";
+        std::cerr << "Could not open file " << options->obj_file << "\n";
         return;
     }
 
@@ -624,7 +624,7 @@ void CodeGenerator::output(Options options) {
     legacy::PassManager pm;
 
     if (target_machine->addPassesToEmitFile(pm, *os, nullptr, CodeGenFileType::CGFT_ObjectFile, false)) {
-        std::cerr << options.obj_file << ": target does not support generation of this file type!\n";
+        std::cerr << options->obj_file << ": target does not support generation of this file type!\n";
         return;
     }
 
@@ -634,31 +634,40 @@ void CodeGenerator::output(Options options) {
     out->keep();
 }
 
-void CodeGenerator::link(Options options) {
+void CodeGenerator::link(Options *options) {
     std::stringstream cmd;
 
 #ifdef _WIN32
 	cmd << "clang -o";
-    cmd << options.exe_file << " ";
-    cmd << options.ll_file << " ";
+    cmd << options->exe_file << " ";
+    cmd << options->ll_file << " ";
 
-	for (auto lib : options.libs) {
+	for (auto lib : options->libs) {
 	    cmd << lib << " ";
     }
 
-    std::system(cmd.str().c_str());
-    std::remove(options.ll_file);
-#else
-	cmd << "gcc -o ";
-	cmd << options.exe_file << " ";
-    cmd << options.obj_file;
-
-	for (auto lib : options.libs) {
-	    cmd << " -l" << lib;
+	for (auto linker_flags : options->linker_flags) {
+	    cmd << linker_flags << " ";
     }
 
     std::system(cmd.str().c_str());
-    std::remove(options.obj_file);
+    std::remove(options->ll_file);
+#else
+	cmd << "gcc -o ";
+	cmd << options->exe_file << " ";
+    cmd << options->obj_file;
+
+	for (auto lib : options->libs) {
+	    cmd << " -l" << lib;
+    }
+
+	for (auto linker_flags : options->linker_flags) {
+	    cmd << " " << linker_flags;
+    }
+
+    std::cout << cmd.str() << "\n";
+    std::system(cmd.str().c_str());
+    std::remove(options->obj_file);
 #endif
 }
 
@@ -675,12 +684,12 @@ void CodeGenerator::optimize() {
     pm->run(*llvm_module);
 }
 
-void CodeGenerator::dump(Options options) {
-    if (options.flags & PRINT_LLVM) {
+void CodeGenerator::dump(Options *options) {
+    if (options->flags & PRINT_LLVM) {
         std::error_code std_error;
-        auto out = new ToolOutputFile(options.ll_file, std_error, sys::fs::OF_None);
+        auto out = new ToolOutputFile(options->ll_file, std_error, sys::fs::OF_None);
         if (!out) {
-            std::cerr << "Could not open file " << options.ll_file << "\n";
+            std::cerr << "Could not open file " << options->ll_file << "\n";
             return;
         }
 

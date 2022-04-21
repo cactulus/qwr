@@ -5,6 +5,7 @@
 
 #include "parser.h"
 #include "arena.h"
+#include "manager.h"
 
 const std::unordered_map<int, int> operator_precedence = {
 	{TOKEN_ADD_EQ, 1},
@@ -86,6 +87,29 @@ Stmt *Parser::parse_top_level_stmt() {
         } else {
             messenger->report(tok, "Expected function name after 'extern'");
         }
+    }
+
+    if (eat_token_if(TOKEN_USE)) {
+        auto tok = lexer.peek_token();
+        if (!eat_token_if(TOKEN_STRING_LIT)) {
+            messenger->report(tok, "Expected string literal with name of standard library");
+        }
+        eat_token_if(';');
+    
+        manager_add_library(tok->lexeme);
+        return parse_top_level_stmt();
+    }
+
+    if (eat_token_if(TOKEN_QWR)) {
+        auto tok = lexer.peek_token();
+        if (!eat_token_if(TOKEN_STRING_LIT)) {
+            messenger->report(tok, "Expected string literal after 'qwr' for specifying linker lags");
+        }
+        eat_token_if(';');
+    
+        manager_add_flags(tok->lexeme);
+
+        return parse_top_level_stmt();
     }
 
     if (tok->type == TOKEN_EOF) {

@@ -1,0 +1,32 @@
+use "io";
+use "glfw";
+use "gl";
+
+error :: (msg: *u8) {
+    printf("%s\n", msg);
+    exit(1);
+}
+
+main :: () int {
+    if (!glfwInit()) {
+        error("Failed to initialize GLFW!");
+    }
+
+    window := glfwCreateWindow(800, 600, "Hello World", nil, nil);
+    if (!window) {
+        glfwTerminate();
+    }
+
+    glfwMakeContextCurrent(window);
+
+    while (!glfwWindowShouldClose(window)) {
+        glClear(GL_COLOR_BUFFER_BIT);
+
+        glfwSwapBuffers(window);
+
+        glfwPollEvents();
+    }
+
+    glfwTerminate();
+    return 0; 
+}

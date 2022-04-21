@@ -3,7 +3,8 @@
 
 #include "messenger.h"
 
-void Messenger::init(char *code) {
+void Messenger::init(const char *code) {
+    code_lines.clear();
 	std::stringstream code_stream(code);
 	std::string line;
 	

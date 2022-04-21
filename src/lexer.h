@@ -41,6 +41,9 @@ enum TokenType {
 	TOKEN_DELETE,
 	TOKEN_ENUM,
 	TOKEN_STRUCT,
+	TOKEN_USE,
+
+	TOKEN_QWR,
 };
 
 struct Token {
@@ -52,7 +55,7 @@ struct Token {
 	int line;
 
 	union {
-		char *lexeme;
+		const char *lexeme;
 		long int_value;
 	};
 
@@ -61,7 +64,7 @@ struct Token {
 
 struct Lexer {
 	std::vector<Token *> tokens;
-	char *input;
+	const char *input;
 	int input_len;
 
 	int line;
@@ -69,7 +72,7 @@ struct Lexer {
 	int pos;
 	int token_index;
 
-	void init(char *code, int code_len);
+	void init(const char *code, int code_len);
 
 	Token *peek_token(int ahead=0);
 	Token *last_token(int amount=1);
@@ -82,6 +85,9 @@ struct Lexer {
 
 	char peek_char(int ahead=0);
 	void eat_char();
+
+	void backup();
+	void restore();
 };
 
 bool ttype_is_binary(int type);

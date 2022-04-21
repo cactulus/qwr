@@ -6,11 +6,10 @@
 
 char *change_file_extension(const char *filename, const char *extension);
 
-void compile(Options options) {
-	Manager manager;
-	manager.init();
+void compile(Options *options) {
+	manager_init(options);
 
-    manager.run(options);
+    manager_run();
 }
 
 int main(int argc, char *argv[]) {
@@ -68,7 +67,7 @@ int main(int argc, char *argv[]) {
         exit(1);
     }
 
-    compile(options);
+    compile(&options);
 
 	return 0;
 }
