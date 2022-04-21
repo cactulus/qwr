@@ -280,7 +280,7 @@ const char *escape_str_lit(const char *text) {
         }
     }
 
-    etext = new char [nl];
+    etext = new char [nl + 1];
     for (i = 0; i < sl; ++i) {
         if (text[i] != '\\') {
             etext[i] = text[i]; 

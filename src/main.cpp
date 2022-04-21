@@ -20,7 +20,7 @@ int main(int argc, char *argv[]) {
         return 0;
     }
 
-    Options options;
+    Options options = {};
     options.src_file = 0;
 
     argc--; argv++;
