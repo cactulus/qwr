@@ -28,6 +28,8 @@ enum QBaseType {
 	TYPE_BOOL,
 	TYPE_ENUM,
 	TYPE_STRUCT,
+	TYPE_CHAR,
+	TYPE_STRING,
 };
 
 struct QType;
@@ -49,6 +51,8 @@ struct QType {
     bool isbool();
     bool isenum();
     bool isstruct();
+    bool ischar();
+    bool isstring();
 };
 
 struct Typer {

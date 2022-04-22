@@ -21,12 +21,14 @@ static int read_xchars(Lexer *l, const char **output, bool (*check) (char c));
 static void read_atom_or_keyword(Lexer *l, Token *t);
 static void read_int_lit(Lexer *l, Token *t);
 static void read_string_lit(Lexer *l, Token *t);
+static void read_char_lit(Lexer *l, Token *t);
 
 static bool is_ident_char(char c);
 static bool is_digit(char c);
 static bool is_not_quote(char c);
 
 const char *escape_str_lit(const char *text);
+static char make_escape(char c);
 
 const char *operator_chars = "+-=*/();,.{}&|:<>![]@";
 
@@ -141,6 +143,8 @@ Token *Lexer::read_token() {
 		read_int_lit(this, t);
     } else if (c == '"') {
         read_string_lit(this, t);
+    } else if (c == '\'') {
+        read_char_lit(this, t);
 	} else {
 		std::string possible_two_char_token = std::string(1, c) + peek_char(1);
 		auto two_char_token_it = two_char_tokens.find(possible_two_char_token);
@@ -249,6 +253,32 @@ void read_string_lit(Lexer *l, Token *t) {
     t->lexeme = escape_str_lit(lit);
 }
 
+void read_char_lit(Lexer *l, Token *t) {
+    l->eat_char();
+    char c = l->peek_char();
+
+    l->eat_char();
+    char end = l->peek_char();
+
+    if (c == '\\') {
+        c = make_escape(end);
+
+        l->eat_char();
+        end = l->peek_char();
+    }
+        
+    l->eat_char();
+
+    if (end != '\'') {
+        std::cout << "Expected ' but got " << c << "\n";
+        std::cout << "in line " << (l->line + 1) << ", col " << l->col << "\n";
+        exit(0);
+    }
+
+    t->type = TOKEN_CHAR_LIT;
+    t->char_value = c;
+}
+
 bool is_ident_char(char c) {
 	return c == '_' || isalnum(c);
 }
@@ -287,26 +317,28 @@ const char *escape_str_lit(const char *text) {
             continue;
         }
 
-        switch (text[i+1]) {
-            case 'n':
-                etext[i] = '\n';
-                break;
-            case 'r':
-                etext[i] = '\t';
-                break;
-            case 't':
-                etext[i] = '\r';
-                break;
-            case '0':
-                etext[i] = '\0';
-                break;
-            default:
-                break;
-        }
+        char esc = make_escape(text[i+1]);
+        etext[i] = esc;
+
     }
 
     etext[nl] = '\0';
     return etext;
+}
+
+char make_escape(char c) {
+    switch (c) {
+        case 'n':
+            return '\n';
+        case 'r':
+            return '\t';
+        case 't':
+            return '\r';
+        case '0':
+            return '\0';
+        default:
+            return c;
+    }
 }
 
 void Lexer::backup() {

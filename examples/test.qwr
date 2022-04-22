@@ -12,7 +12,7 @@ Box :: struct {
 }
 
 Person :: struct {
-	name: *u8,
+	name: string,
 	age: int,
 	fav_day: int
 }

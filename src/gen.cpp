@@ -394,6 +394,7 @@ Value *CodeGenerator::gen_cast(Expr *expr) {
     if (expr->cast.from->isuint() && bt > bf) {
         return builder->CreateZExt(target, to);
     }
+
     return builder->CreateIntCast(target, to, expr->cast.from->isuint());
 }
 
@@ -674,9 +675,9 @@ void CodeGenerator::link(Options *options) {
 void CodeGenerator::optimize() {
     legacy::PassManager *pm = new legacy::PassManager();
     PassManagerBuilder pmb;
-    pmb.Inliner = createFunctionInliningPass(3, 3, false);
+    pmb.Inliner = createFunctionInliningPass(3, 0, false);
     pmb.OptLevel = 3;
-    pmb.SizeLevel = 3;
+    pmb.SizeLevel = 0;
     pmb.DisableUnrollLoops = false;
     pmb.LoopVectorize = true;
     pmb.SLPVectorize = true;

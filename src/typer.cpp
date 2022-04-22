@@ -31,6 +31,14 @@ bool QType::isstruct() {
     return base == TYPE_STRUCT;
 }
 
+bool QType::ischar() {
+    return base == TYPE_CHAR;
+}
+
+bool QType::isstring() {
+    return base == TYPE_STRING;
+}
+
 void Typer::init(LLVMContext *_llvm_context, Messenger *_messenger) {
 	llvm_context = _llvm_context;
 	messenger = _messenger;
@@ -47,6 +55,8 @@ void Typer::init(LLVMContext *_llvm_context, Messenger *_messenger) {
 	insert_builtin("u64", make_type(TYPE_UINT64, (Type *) Type::getIntNTy(*llvm_context, 64)));
 	insert_builtin("uint", make_type(TYPE_UINT32, (Type *) Type::getIntNTy(*llvm_context, 32)));
 	insert_builtin("bool", make_type(TYPE_BOOL, (Type *) Type::getInt1Ty(*llvm_context)));
+	insert_builtin("char", make_type(TYPE_CHAR, (Type *) Type::getIntNTy(*llvm_context, 8)));
+	insert_builtin("string", make_type(TYPE_STRING, make_pointer(get("char"))->llvm_type));
 }
 
 void Typer::insert_builtin(const char *type_str, QType *type) {

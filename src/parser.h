@@ -194,7 +194,10 @@ struct Parser {
 	Expr *parse_primary();
 
     Expr *cast(Expr *target, QType *to);
+
     Expr *make_compare_zero(Expr *expr);
+    Expr *make_compare_strings(Expr *lhs, Expr *rhs, TokenType op);
+
 	QType *parse_type();
 
     bool expr_is_targatable(Expr *expr);
@@ -207,8 +210,9 @@ struct Parser {
 	void scope_push();
 	void scope_pop();
 
-    void insert_func(Token *name_token, const char *mangled_name, Stmt *func_decl);
+    void insert_func(Token *name_token, const char *mangled_name, Stmt *func_decl, bool is_extern=false);
     Stmt *get_func(Token *name_token, std::vector<Expr *> *arguments);
+    Stmt *get_func(const char *name);
 
 	const char *mangle_func(Stmt *stmt);
 	std::string mangle_type(QType *type);

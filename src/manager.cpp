@@ -50,6 +50,8 @@ void manager_run() {
     messenger.init(code);
     parser.lexer.init(code, code_len);
 
+    manager_add_library("qwr");
+
     Stmt *stmt;
 
     while (true) {

@@ -1,11 +1,19 @@
-extern printf :: (fmt: *u8, ..) s32;
+extern printf :: (fmt: string, ..) s32;
 
 print :: (i: s64) {
     printf("%d\n", i);
 }
 
-print :: (s: *u8) {
+print :: (s: string) {
     printf("%s\n", s);
+}
+
+print :: (p: *u8) {
+    printf("%p\n", p);
+}
+
+print :: (c: char) {
+    printf("%c\n", c);
 }
 
 extern exit :: (status: int);

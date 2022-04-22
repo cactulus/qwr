@@ -27,6 +27,7 @@ enum TokenType {
 	TOKEN_ATOM = 128,
 	TOKEN_INT_LIT,
     TOKEN_STRING_LIT,
+    TOKEN_CHAR_LIT,
 
 	TOKEN_RETURN,
 	TOKEN_EXTERN,
@@ -57,6 +58,7 @@ struct Token {
 	union {
 		const char *lexeme;
 		long int_value;
+		char char_value;
 	};
 
 	void print();

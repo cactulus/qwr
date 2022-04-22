@@ -255,7 +255,7 @@ Stmt *Parser::parse_extern_func_def(Token *name) {
         eat_token_if(';');
     }
 
-    insert_func(name, mname, stmt);
+    insert_func(name, mname, stmt, true);
     return stmt;
 }
 
@@ -553,6 +553,15 @@ Expr *Parser::parse_binary(int prec) {
 
         if (ttype_is_conditional(tok_type)) {
             eval_type = typer->get("bool");
+            
+            if (lhs_type->isstring() && rhs_type->isstring()) {
+                if (tok_type == TOKEN_EQ_EQ || tok_type == TOKEN_NOT_EQ) {
+                    lhs = make_compare_strings(lhs, rhs, tok_type); 
+                    continue;
+                } else {
+                    messenger->report(tok, "Illegal operator for string types");
+                }
+            }
         }
 
         if (ttype_is_logical(tok_type)) {
@@ -744,10 +753,19 @@ Expr *Parser::parse_primary() {
         return expr;
 	}
 
+	if (tok->type == TOKEN_CHAR_LIT) {
+		lexer.eat_token();
+		
+		auto expr = make_expr(INT_LIT, typer->get("char"));
+        expr->int_value = tok->char_value;
+
+        return expr;
+	}
+
     if (tok->type == TOKEN_STRING_LIT) {
 		lexer.eat_token();
 		
-		auto expr = make_expr(STRING_LIT, typer->make_pointer(typer->get("u8")));
+		auto expr = make_expr(STRING_LIT, typer->get("string"));
         expr->string_lit = tok->lexeme;
 
         return expr;
@@ -850,6 +868,29 @@ Expr *Parser::make_compare_zero(Expr *expr) {
     return cmp_expr;
 }
 
+Expr *Parser::make_compare_strings(Expr *lhs, Expr *rhs, TokenType op) {
+    auto arguments = new std::vector<Expr *>();
+
+    arguments->push_back(lhs);
+    arguments->push_back(rhs);
+
+    auto fn = get_func("strcmp_s_s");
+
+    auto fn_call_expr = make_expr(FUNCTION_CALL, typer->get("s32"));
+    fn_call_expr->func_call.arguments = arguments;
+    fn_call_expr->func_call.target_func_decl = fn;
+
+    auto zero = make_expr(INT_LIT, typer->get("s32"));
+    zero->int_value = 0;
+    
+    auto cmp_expr = make_expr(BINARY, typer->get("bool"));
+    cmp_expr->bin.lhs = fn_call_expr;
+    cmp_expr->bin.rhs = zero;
+    cmp_expr->bin.op = op;
+
+    return cmp_expr;
+}
+
 QType *Parser::parse_type() {
 	auto tok = lexer.peek_token();
 	if (tok->type == '*') {
@@ -928,6 +969,12 @@ std::string Parser::mangle_type(QType *type) {
 	if (type->isbool()) {
 		return "b";
 	}
+	if (type->isstring()) {
+		return "s";
+	}
+	if (type->ischar()) {
+		return "c";
+	}
 	if (type->ispointer()) {
 		return "p" + mangle_type(type->element_type);
 	}
@@ -967,14 +1014,16 @@ Variable *Scope::find_null(const char *name) {
 	return it->second;
 }
 
-void Parser::insert_func(Token *name_token, const char *mangled_name, Stmt *func_decl) {
+void Parser::insert_func(Token *name_token, const char *mangled_name, Stmt *func_decl, bool is_extern) {
     auto sname = std::string(mangled_name);
     auto it = functions.find(sname);
     if (it != functions.end()) {
-        messenger->report(name_token, "Function already exists");
+        if (!is_extern) {
+            messenger->report(name_token, "Function already exists");
+        }
+    } else {
+        functions.insert(std::make_pair(sname, func_decl));
     }
-    
-    functions.insert(std::make_pair(sname, func_decl));
 }
 
 Stmt *Parser::get_func(Token *name_token, std::vector<Expr *> *arguments) {
@@ -1016,6 +1065,11 @@ Stmt *Parser::get_func(Token *name_token, std::vector<Expr *> *arguments) {
 
     messenger->report(name_token, "Function does not exists");
     return 0;
+}
+
+Stmt *Parser::get_func(const char *name) {
+    auto sname = std::string(name);
+    return functions[sname];
 }
 
 Stmt *Parser::make_stmt(StmtKind kind) {
