@@ -15,6 +15,10 @@ bool QType::isuint() {
     return base >= TYPE_UINT8 && base <= TYPE_UINT64;
 }
 
+bool QType::isfloat() {
+	return base >= TYPE_F16 && base <= TYPE_F64;
+}
+
 bool QType::ispointer() {
 	return base == TYPE_POINTER;
 }
@@ -39,6 +43,10 @@ bool QType::isstring() {
     return base == TYPE_STRING;
 }
 
+bool QType::is_int_in_llvm() {
+	return isint() || ischar() || isbool();
+}
+
 void Typer::init(LLVMContext *_llvm_context, Messenger *_messenger) {
 	llvm_context = _llvm_context;
 	messenger = _messenger;
@@ -48,12 +56,16 @@ void Typer::init(LLVMContext *_llvm_context, Messenger *_messenger) {
 	insert_builtin("s16", make_type(TYPE_INT16, (Type *) Type::getInt16Ty(*llvm_context)));
 	insert_builtin("s32", make_type(TYPE_INT32, (Type *) Type::getInt32Ty(*llvm_context)));
 	insert_builtin("s64", make_type(TYPE_INT64, (Type *) Type::getInt64Ty(*llvm_context)));
-	insert_builtin("int", make_type(TYPE_INT32, (Type *) Type::getInt32Ty(*llvm_context)));
 	insert_builtin("u8", make_type(TYPE_UINT8, (Type *) Type::getIntNTy(*llvm_context, 8)));
 	insert_builtin("u16", make_type(TYPE_UINT16, (Type *) Type::getIntNTy(*llvm_context, 16)));
 	insert_builtin("u32", make_type(TYPE_UINT32, (Type *) Type::getIntNTy(*llvm_context, 32)));
 	insert_builtin("u64", make_type(TYPE_UINT64, (Type *) Type::getIntNTy(*llvm_context, 64)));
+	insert_builtin("f16", make_type(TYPE_F16, (Type *)Type::getHalfTy(*llvm_context)));
+	insert_builtin("f32", make_type(TYPE_F32, (Type *)Type::getFloatTy(*llvm_context)));
+	insert_builtin("f64", make_type(TYPE_F64, (Type *)Type::getDoubleTy(*llvm_context)));
+	insert_builtin("int", make_type(TYPE_INT32, (Type *)Type::getInt32Ty(*llvm_context)));
 	insert_builtin("uint", make_type(TYPE_UINT32, (Type *) Type::getIntNTy(*llvm_context, 32)));
+	insert_builtin("float", make_type(TYPE_F32, (Type *)Type::getFloatTy(*llvm_context)));
 	insert_builtin("bool", make_type(TYPE_BOOL, (Type *) Type::getInt1Ty(*llvm_context)));
 	insert_builtin("char", make_type(TYPE_CHAR, (Type *) Type::getIntNTy(*llvm_context, 8)));
 	insert_builtin("string", make_type(TYPE_STRING, make_pointer(get("char"))->llvm_type));
@@ -119,22 +131,33 @@ bool Typer::has(const char *type_str) {
     return it != types.end();
 }
 
-bool Typer::can_convert(QType *from, QType *to) {
+bool Typer::can_convert_implicit(QType *from, QType *to) {
     if (compare(from, to))
         return true;
+
+	if (from->isfloat() && to->isfloat())
+		return true;
 
     if (from->isint() && to->isint())
         return true;
 
-    if (from->isint() && to->isbool()) {
+    if (from->isint() && to->isbool())
         return true;
-    }
 
-    if (from->isbool() && to->isint()) {
+    if (from->isbool() && to->isint())
         return true;
-    }
 
     return false;
+}
+
+bool Typer::can_convert_explicit(QType *from, QType *to) {
+	if (can_convert_implicit(from, to))
+		return true;
+
+	bool from_is_primitive = (from->base >= TYPE_INT8) && (from->base <= TYPE_CHAR);
+	bool to_is_primitive = (to->base >= TYPE_INT8) && (to->base <= TYPE_CHAR);
+
+	return from_is_primitive && to_is_primitive;
 }
 
 bool Typer::compare(QType *type1, QType *type2) {

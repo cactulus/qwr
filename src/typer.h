@@ -14,7 +14,7 @@ namespace llvm {
 	class LLVMContext;
 };
 
-enum QBaseType {
+enum QBaseType { /* order is very important */
 	TYPE_VOID,
 	TYPE_POINTER,
 	TYPE_INT8,
@@ -25,10 +25,13 @@ enum QBaseType {
 	TYPE_UINT16,
 	TYPE_UINT32,
 	TYPE_UINT64,
+	TYPE_F16,
+	TYPE_F32,
+	TYPE_F64,
 	TYPE_BOOL,
+	TYPE_CHAR,
 	TYPE_ENUM,
 	TYPE_STRUCT,
-	TYPE_CHAR,
 	TYPE_STRING,
 };
 
@@ -47,12 +50,16 @@ struct QType {
 
 	bool isint();
 	bool isuint();
+	bool isfloat();
 	bool ispointer();
     bool isbool();
     bool isenum();
     bool isstruct();
     bool ischar();
     bool isstring();
+
+	/* returns true if in the end, it is an int type in llvm */
+	bool is_int_in_llvm();
 };
 
 struct Typer {
@@ -74,7 +81,8 @@ struct Typer {
 
 	bool has(const char *type_str);
 
-	bool can_convert(QType *from, QType *to);
+	bool can_convert_implicit(QType *from, QType *to);
+	bool can_convert_explicit(QType *from, QType *to);
 	bool compare(QType *type1, QType *type2);
 };
 

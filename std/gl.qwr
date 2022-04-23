@@ -1,5 +1,6 @@
 qwr "-lGL";
 
 extern glClear :: (mask: u32);
+extern glClearColor :: (red: f32, green: f32, blue: f32, alpha: f32);
 
 GL_COLOR_BUFFER_BIT :@ 16384;

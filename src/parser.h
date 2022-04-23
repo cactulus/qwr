@@ -38,6 +38,7 @@ enum ExprKind {
 	BINARY,
 	VARIABLE,
 	INT_LIT,
+	FLOAT_LIT,
     STRING_LIT,
     FUNCTION_CALL,
     CAST,
@@ -57,7 +58,8 @@ struct Expr {
 		Expr *target;
 		QType *alloc_type;
 		Variable *var;
-		long int_value;	
+		long int_value;
+		double float_value;
         const char *string_lit;
 
 		struct {

@@ -16,4 +16,8 @@ print :: (c: char) {
     printf("%c\n", c);
 }
 
+print :: (f: f64) {
+	printf("%f\n", f);
+}
+
 extern exit :: (status: int);

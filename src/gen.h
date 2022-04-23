@@ -37,6 +37,7 @@ struct CodeGenerator {
 	llvm::Value *gen_deref(Expr *expr);
 	llvm::Value *gen_variable(Expr *expr);
 	llvm::Value *gen_int_lit(Expr *expr);
+	llvm::Value *gen_float_lit(Expr *expr);
 	llvm::Value *gen_string_lit(Expr *expr);
 	llvm::Value *gen_func_call(Expr *expr);
 	llvm::Value *gen_compare_zero(Expr *expr);

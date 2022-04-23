@@ -42,6 +42,7 @@ const std::unordered_map<ExprKind, gen_expr_fun> expr_gen_funs = {
 	{DEREF, (gen_expr_fun) &CodeGenerator::gen_deref},
 	{VARIABLE, (gen_expr_fun) &CodeGenerator::gen_variable},
 	{INT_LIT, (gen_expr_fun) &CodeGenerator::gen_int_lit},
+	{FLOAT_LIT, (gen_expr_fun)&CodeGenerator::gen_float_lit},
 	{STRING_LIT, (gen_expr_fun) &CodeGenerator::gen_string_lit},
 	{FUNCTION_CALL, (gen_expr_fun) &CodeGenerator::gen_func_call},
 	{COMPARE_ZERO, (gen_expr_fun) &CodeGenerator::gen_compare_zero},
@@ -262,9 +263,10 @@ Value *CodeGenerator::gen_binary(Expr *expr) {
 	Instruction::BinaryOps op;
 	CmpInst::Predicate cmpop;
 	Value *new_value = 0;
-	bool is_ptr = expr->type->ispointer();
+	auto ty = expr->type;
+	bool is_ptr = ty->ispointer();
 
-    if (expr->type->isuint() || is_ptr) {
+    if (ty->isuint() || is_ptr) {
         switch (top) {
             case '+':
             case TOKEN_ADD_EQ: 
@@ -293,7 +295,7 @@ Value *CodeGenerator::gen_binary(Expr *expr) {
             case '<': cmpop = CmpInst::Predicate::ICMP_ULT; break;
             case '>': cmpop = CmpInst::Predicate::ICMP_UGT; break;
 	    }
-    } else {
+    } else if (ty->is_int_in_llvm()) {
         switch (top) {
             case '+':
             case TOKEN_ADD_EQ: 
@@ -322,7 +324,39 @@ Value *CodeGenerator::gen_binary(Expr *expr) {
             case '<': cmpop = CmpInst::Predicate::ICMP_SLT; break;
             case '>': cmpop = CmpInst::Predicate::ICMP_SGT; break;
 	    }
-    }
+	} else if (ty->isfloat()) {
+		switch (top) {
+		case '+':
+		case TOKEN_ADD_EQ:
+			op = Instruction::BinaryOps::FAdd;
+			break;
+		case '-':
+		case TOKEN_SUB_EQ:
+			op = Instruction::BinaryOps::FSub;
+			break;
+		case '*':
+		case TOKEN_MUL_EQ:
+			op = Instruction::BinaryOps::FMul;
+			break;
+		case '/':
+		case TOKEN_DIV_EQ:
+			op = Instruction::BinaryOps::FDiv;
+			break;
+		case '%':
+		case TOKEN_MOD_EQ:
+			op = Instruction::BinaryOps::FRem;
+			break;
+		case TOKEN_EQ_EQ: cmpop = CmpInst::Predicate::FCMP_UEQ; break;
+		case TOKEN_NOT_EQ: cmpop = CmpInst::Predicate::FCMP_UNE; break;
+		case TOKEN_LT_EQ: cmpop = CmpInst::Predicate::FCMP_ULE; break;
+		case TOKEN_GT_EQ: cmpop = CmpInst::Predicate::FCMP_UGE; break;
+		case '<': cmpop = CmpInst::Predicate::FCMP_ULT; break;
+		case '>': cmpop = CmpInst::Predicate::FCMP_UGT; break;
+		}
+	} else if (top != '=') {
+		std::cout << ty->base << "\n";
+		llvm_unreachable("Not implemented binary expression for this type");
+	}
 
 	if (top == '=') {
 		new_value = rhs;
@@ -339,7 +373,11 @@ Value *CodeGenerator::gen_binary(Expr *expr) {
 	        builder->CreateStore(new_value, target);
         }
 	}  else if (ttype_is_conditional(top)) {
-        new_value = builder->CreateICmp(cmpop, lhs, rhs);
+		if (ty->isfloat()) {
+			new_value = builder->CreateFCmp(cmpop, lhs, rhs);
+		} else {
+			new_value = builder->CreateICmp(cmpop, lhs, rhs);
+		}
     } else if (ttype_is_logical(top)) {
         BasicBlock *rhs_block = BasicBlock::Create(llvm_context, "", current_function);
         BasicBlock *merge_block = BasicBlock::Create(llvm_context, "", current_function);
@@ -371,28 +409,40 @@ Value *CodeGenerator::gen_binary(Expr *expr) {
 }
 
 Value *CodeGenerator::gen_cast(Expr *expr) {
-    QBaseType bf = expr->cast.from->base;
-    QBaseType bt = expr->cast.to->base;
+	QType *ft = expr->cast.from;
+	QType *tt = expr->cast.to;
+    QBaseType bf = ft->base;
+    QBaseType bt = tt->base;
     auto target = gen_expr(expr->cast.target);
-    auto to = expr->cast.to->llvm_type;
+    auto to = tt->llvm_type;
 
     if (bf == TYPE_POINTER && bt == TYPE_POINTER) {
         return builder->CreatePointerCast(target, to);
     }
 
-    if (bf == TYPE_BOOL && expr->cast.to->isint()) {
-        return builder->CreateZExt(target, to);
-    }
+	if (ft->is_int_in_llvm() && tt->is_int_in_llvm()) {
+		return builder->CreateIntCast(target, to, ft->isuint());
+	}
 
-    if (expr->cast.from->isint() && bt == TYPE_BOOL) {
-        return builder->CreateIntCast(target, to, expr->cast.from->isuint());
-    }
-    
-    if (expr->cast.from->isuint() && bt > bf) {
-        return builder->CreateZExt(target, to);
-    }
+	if (ft->isfloat() && tt->isfloat()) {
+		return builder->CreateFPCast(target, to);
+	}
 
-    return builder->CreateIntCast(target, to, expr->cast.from->isuint());
+	if (ft->is_int_in_llvm() && tt->isfloat()) {
+		if (ft->isuint()) {
+			return builder->CreateUIToFP(target, to);
+		}
+		return builder->CreateSIToFP(target, to);
+	}
+
+	if (ft->isfloat() && tt->is_int_in_llvm()) {
+		if (tt->isuint()) {
+			return builder->CreateFPToUI(target, to);
+		}
+		return builder->CreateFPToSI(target, to);
+	}
+
+	llvm_unreachable("Cast not implemented");
 }
 
 Value *CodeGenerator::gen_unary(Expr *expr) {
@@ -406,7 +456,12 @@ Value *CodeGenerator::gen_unary(Expr *expr) {
         } break;
         case '-': {
             auto target = gen_expr(expr->unary.target);
-            return builder->CreateNeg(target);
+			if (expr->type->isfloat()) {
+				return builder->CreateFNeg(target);
+			} else {
+				return builder->CreateNeg(target);
+			}
+            
         } break;
     }
 
@@ -424,6 +479,10 @@ Value *CodeGenerator::gen_variable(Expr *expr) {
 
 Value *CodeGenerator::gen_int_lit(Expr *expr) {
 	return ConstantInt::get(expr->type->llvm_type, expr->int_value);
+}
+
+Value *CodeGenerator::gen_float_lit(Expr *expr) {
+	return ConstantFP::get(expr->type->llvm_type, expr->float_value);
 }
 
 Value *CodeGenerator::gen_string_lit(Expr *expr) {
@@ -450,14 +509,19 @@ Value *CodeGenerator::gen_func_call(Expr *expr) {
 
 Value *CodeGenerator::gen_compare_zero(Expr *expr) {
     Value *target = gen_expr(expr->target);
+	QType *ty = expr->target->type;
 	Value *zero;
-	if (expr->target->type->ispointer()) {
-	    zero = ConstantPointerNull::get((PointerType *) expr->target->type->llvm_type);
-    } else {
-	    zero = ConstantInt::get(typer->get("s32")->llvm_type, 0);
-    }
 
-    return builder->CreateICmp(ICmpInst::Predicate::ICMP_NE, target, zero);
+	if (ty->ispointer()) {
+		zero = ConstantPointerNull::get((PointerType *)ty->llvm_type);
+		return builder->CreateICmpNE(target, zero);
+	} else if (ty->isfloat()) {
+		zero = ConstantFP::get(ty->llvm_type, 0.0);
+		return builder->CreateFCmpUNE(target, zero);
+    } else {
+		zero = ConstantInt::get(ty->llvm_type, 0);
+		return builder->CreateICmpNE(target, zero);
+    }
 }
 
 Value *CodeGenerator::gen_nil(Expr *expr) {
@@ -682,5 +746,5 @@ void CodeGenerator::dump(Options *options) {
         llvm_module->print(*os, nullptr);
         out->keep();
     }
-   // llvm_module->print(errs(), 0);
+    // llvm_module->print(errs(), 0);
 }

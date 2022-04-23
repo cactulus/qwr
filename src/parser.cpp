@@ -333,7 +333,7 @@ Stmt *Parser::parse_variable_definition_type(Token *name_token, u8 flags) {
 
     auto val_type = parse_variable_definition_base(name_token, flags, stmt);
     if (!typer->compare(type, val_type)) {
-        if (typer-> can_convert(val_type, type)) {
+        if (typer->can_convert_implicit(val_type, type)) {
             stmt->var_def.value = cast(stmt->var_def.value, type);
 			stmt->var_def.var->type = type;
         } else {
@@ -469,7 +469,7 @@ Stmt *Parser::parse_return() {
             auto ret_type = (*return_types)[i];
 
             if (!typer->compare(ret_val->type, ret_type)) {
-                if (typer->can_convert(ret_val->type, ret_type)) {
+                if (typer->can_convert_implicit(ret_val->type, ret_type)) {
                     (*return_values)[i] = cast(ret_val, ret_type);
                 } else {
                     messenger->report(tok, "Return values do not match return types of function");
@@ -587,13 +587,15 @@ Expr *Parser::parse_binary(int prec) {
         }
 
         if (ttype_is_binary(tok_type)) {
-            if (!(lhs_type->ispointer() && rhs_type->isint()) && (!lhs_type->isint() && !rhs_type->isint())) {
+            if (!(lhs_type->ispointer() && rhs_type->isint()) &&
+				(!lhs_type->isint() && !rhs_type->isint()) &&
+				(!lhs_type->isfloat() && !rhs_type->isfloat())) {
                 messenger->report(tok, "Illegal type for binary expression"); 
             }
         }
 
         if (!typer->compare(lhs_type, rhs_type)) {
-            if (typer->can_convert(rhs_type, lhs_type)) {
+            if (typer->can_convert_implicit(rhs_type, lhs_type)) {
                 rhs = cast(rhs, lhs_type);
             } else {
                 if (!(lhs_type->ispointer() && rhs_type->isint() && ttype_is_binary(tok_type))) {
@@ -725,7 +727,12 @@ Expr *Parser::parse_postfix() {
     auto expr = parse_primary();
 
     if (eat_token_if(TOKEN_AS)) {
+		auto tok = lexer.peek_token();
         auto type = parse_type();
+
+		if (!typer->can_convert_explicit(expr->type, type)) {
+			messenger->report(tok, "Invalid cast");
+		}
 
         return cast(expr, type);
     }
@@ -751,6 +758,15 @@ Expr *Parser::parse_primary() {
         expr->int_value = tok->int_value;
 
         return expr;
+	}
+
+	if (tok->type == TOKEN_FLOAT_LIT) {
+		lexer.eat_token();
+
+		auto expr = make_expr(FLOAT_LIT, typer->get("f32"));
+		expr->float_value = tok->float_value;
+
+		return expr;
 	}
 
 	if (tok->type == TOKEN_CHAR_LIT) {
@@ -1049,7 +1065,7 @@ Stmt *Parser::get_func(Token *name_token, std::vector<Expr *> *arguments) {
             QType *par_type = (*decl_args)[i]->type;
 
             if (!typer->compare(arg_type, par_type)) {
-                if (typer->can_convert(arg_type, par_type)) {
+                if (typer->can_convert_implicit(arg_type, par_type)) {
                     (*arguments)[i] = cast(arg, par_type);
                 } else {
                     matching = false;

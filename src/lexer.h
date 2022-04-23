@@ -26,6 +26,7 @@ enum TokenType {
 	
 	TOKEN_ATOM = 128,
 	TOKEN_INT_LIT,
+	TOKEN_FLOAT_LIT,
     TOKEN_STRING_LIT,
     TOKEN_CHAR_LIT,
 
@@ -59,6 +60,7 @@ struct Token {
 		const char *lexeme;
 		long int_value;
 		char char_value;
+		double float_value;
 	};
 
 	void print();

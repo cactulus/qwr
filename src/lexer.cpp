@@ -19,12 +19,14 @@ struct LexerInfo {
 
 static int read_xchars(Lexer *l, const char **output, bool (*check) (char c));
 static void read_atom_or_keyword(Lexer *l, Token *t);
-static void read_int_lit(Lexer *l, Token *t);
+static void read_int_or_float(Lexer *l, Token *t);
 static void read_string_lit(Lexer *l, Token *t);
 static void read_char_lit(Lexer *l, Token *t);
+static void read_hex_number(Lexer *l, Token *t);
 
 static bool is_ident_char(char c);
 static bool is_digit(char c);
+static bool is_hex_digit(char c);
 static bool is_not_quote(char c);
 
 const char *escape_str_lit(const char *text);
@@ -139,8 +141,10 @@ Token *Lexer::read_token() {
 		t->type = TOKEN_EOF;
 	} else if (c == '_' || isalpha(c)) {
 		read_atom_or_keyword(this, t);
+	} else if(c == '0' && peek_char(1) == 'x') {
+		read_hex_number(this, t);
 	} else if (is_digit(c)) {
-		read_int_lit(this, t);
+		read_int_or_float(this, t);
     } else if (c == '"') {
         read_string_lit(this, t);
     } else if (c == '\'') {
@@ -235,12 +239,31 @@ void read_atom_or_keyword(Lexer *l, Token *t) {
 	}
 }
 
-void read_int_lit(Lexer *l, Token *t) {
+void read_int_or_float(Lexer *l, Token *t) {
 	const char *num;
-	read_xchars(l, &num, is_digit);
+	auto num1_len = read_xchars(l, &num, is_digit);
+	
+	if (l->peek_char() == '.') {
+		l->eat_char();
 
-	t->type = TOKEN_INT_LIT;
-	t->int_value = atol(num);
+		const char *num2;
+		auto num2_len = read_xchars(l, &num2, is_digit);
+
+		auto len = num1_len + num2_len;
+		char *float_num = new char[len + 2];
+
+		strcpy(float_num, num);
+		strcat(float_num, ".");
+		strcat(float_num, num2);
+
+		float_num[len + 1] = '\0';
+			
+		t->type = TOKEN_FLOAT_LIT;
+		t->float_value = atof(float_num);
+	} else {
+		t->type = TOKEN_INT_LIT;
+		t->int_value = atol(num);
+	}
 }
 
 void read_string_lit(Lexer *l, Token *t) {
@@ -279,12 +302,27 @@ void read_char_lit(Lexer *l, Token *t) {
     t->char_value = c;
 }
 
+void read_hex_number(Lexer *l, Token *t) {
+	l->eat_char();
+	l->eat_char();
+
+	const char *num;
+	int num_len = read_xchars(l, &num, is_hex_digit);
+
+	t->type = TOKEN_INT_LIT;
+	t->int_value = strtol(num, 0, 16);
+}
+
 bool is_ident_char(char c) {
 	return c == '_' || isalnum(c);
 }
 
 bool is_digit(char c) {
 	return '0' <= c && c <= '9';
+}
+
+bool is_hex_digit(char c) {
+	return ('0' <= c && c <= '9') || ('a' <= c && c <= 'f') || ('A' <= c && c <= 'F');
 }
 
 bool is_not_quote(char c) {

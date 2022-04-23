@@ -78,7 +78,6 @@ void manager_run() {
 	auto start = TIMER_NOW;
 
 	code_gen.output(options);
-    code_gen.dump(options);
 
 	auto end = TIMER_NOW;
 	auto diff = TIMER_DIFF(start, end);
@@ -90,6 +89,8 @@ void manager_run() {
     if ((options->flags & COMPILE_ONLY) == 0) {
 	    code_gen.link(options);
     }
+
+	code_gen.dump(options);
 
 	end = TIMER_NOW;
 	diff = TIMER_DIFF(start, end);

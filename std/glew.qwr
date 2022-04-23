@@ -1,0 +1,3 @@
+extern glewInit :: () u32;
+
+GLEW_OK :@ 0

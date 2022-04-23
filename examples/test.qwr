@@ -1,4 +1,5 @@
 use "io";
+use "glfw";
 
 Weekdays :: enum {
 	MONDAY,
@@ -27,6 +28,12 @@ main :: () int {
 	a := 20; // infer type
 	b: int = 10; // specify type
 	c := add(5, 1);
+
+	hhh := 1.23;
+	jjj: float = 123.4567;
+
+	print(hhh);
+	print(jjj);
 
 	print(a);
 	print(b);
