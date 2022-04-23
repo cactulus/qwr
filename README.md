@@ -88,7 +88,7 @@ delete num; // freeing with 'delete'
 ```
 
 ## Standard Library
-Files in /std \
+Files in /std
 ```Rust
 use "io";
 use "glfw";
@@ -97,7 +97,7 @@ use "glfw";
 ## Specify Linker Options (Linux only)
 ```Rust
 qwr "-lglfw"; // used for example in glfw standard library
-```;
+```
 
 ## Examples
 Examples can be found in /examples
