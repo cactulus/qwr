@@ -4,7 +4,8 @@ A Compiler for my programming language
 ## Installation
 ### Requirements
 LLVM \
-gcc
+gcc \
+clang on windows (for now)
 
 ### Step by Step Installation
 > git clone https://github.com/cactulus/qwr.git \
