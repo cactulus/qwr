@@ -21,7 +21,7 @@ Multi line comments denoted by /* */
 s8, s16, s32, s64 -> integer types \
 u8, u16, u32, u64 -> unsigned integer types \
 bool -> boolean type \
-string, pointers \
+string, pointers, char \
 int -> s32 \
 uint -> u32
 
@@ -46,6 +46,9 @@ main :: () s32 {
 x := 20; // infer type
 y: i32 = 10; // type specified
 c, d := sub(5, 3); // multiple return values from function
+
+PI :@ 3.14; // :@ for constant
+
 ```
 
 ## If Statement
@@ -54,3 +57,47 @@ if x == 10 {
     // ...
 }
 ```
+
+## While Statement
+```Rust
+while x < 10 {
+    // ...
+}
+```
+
+## Structs end Enums
+```Rust
+Weekdays :: enum {
+	MONDAY,
+	TUESDAY,
+	WEDNESDAY
+}
+
+Person :: struct {
+	name: string,
+	age: int,
+	fav_day: int
+}
+```
+
+## Memory management
+```Cpp
+num := new int; // allocation with 'new'
+
+delete num; // freeing with 'delete'
+```
+
+## Standard Library
+Files in /std \
+```Rust
+use "io";
+use "glfw";
+```
+
+## Specify Linker Options (Linux only)
+```Rust
+qwr "-lglfw"; // used for example in glfw standard library
+```;
+
+## Examples
+Examples can be found in /examples
