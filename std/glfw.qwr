@@ -1,7 +1,7 @@
 qwr "-lglfw";
 
 extern glfwInit :: () int;
-extern glfwCreateWindow :: (width: int, height: int, title: *u8, monitor: *u8, share: *u8) *u8;
+extern glfwCreateWindow :: (width: int, height: int, title: string, monitor: *u8, share: *u8) *u8;
 extern glfwWindowShouldClose :: (window: *u8) int;
 extern glfwSwapBuffers :: (window: *u8);
 extern glfwMakeContextCurrent :: (window: *u8);

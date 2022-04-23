@@ -12,7 +12,10 @@
 #include "arena.h"
 #include "gen.h"
 
-size_t read_entire_file(const char *file_name, const char **contents);
+static size_t read_entire_file(const char *file_name, const char **contents);
+static const char *get_lib_path();
+
+const char *LIB_PATH;
 
 static Options *options;
 static CodeGenerator code_gen;
@@ -25,12 +28,6 @@ static long long llvm_time = 0;
 static long long link_time = 0;
 static long long loc = 0;
 
-#ifdef _WIN32
-dasdas
-#else
-const char *LIB_PATH = "/usr/local/bin/qwrstd/";
-#endif
-
 void manager_init(Options *_options) {
     options = _options;
 
@@ -39,6 +36,8 @@ void manager_init(Options *_options) {
 	typer.init(&code_gen.llvm_context, &messenger);
 
 	arena_init();
+
+	LIB_PATH = get_lib_path();
 }
 
 void manager_run() {
@@ -148,7 +147,9 @@ void manager_add_library(const char *lib_name) {
 }
 
 void manager_add_flags(const char *flags) {
+#ifndef _WIN32 // TODO (niko) make available on windows?
     options->linker_flags.push_back(flags);
+#endif
 }
 
 size_t read_entire_file(const char *file_name, const char **contents) {
@@ -178,4 +179,21 @@ size_t read_entire_file(const char *file_name, const char **contents) {
              std::istreambuf_iterator<char>(), '\n');
 
 	return len;
+}
+
+const char *get_lib_path() {
+#ifdef _WIN32
+	char *local_appdata;
+	_dupenv_s(&local_appdata, 0, "LOCALAPPDATA");
+
+	const char *lib_path = "\\qwr\\";
+
+	char *path = new char[strlen(local_appdata) + strlen(lib_path)];
+	strcpy(path, local_appdata);
+	strcat(path, lib_path);
+
+	return path;
+#else
+	return "/usr/local/bin/qwrstd/";
+#endif
 }

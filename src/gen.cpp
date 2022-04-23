@@ -3,7 +3,6 @@
 #include <string>
 #include <sstream>
 
-#include <llvm/CodeGen/CommandFlags.h>
 #include <llvm/MC/SubtargetFeature.h>
 #include <llvm/Support/FileSystem.h>
 #include <llvm/Support/ToolOutputFile.h>
@@ -20,8 +19,6 @@
 #include "manager.h"
 
 using namespace llvm;
-
-static llvm::codegen::RegisterCodeGenFlags CGF;
 
 typedef void (CodeGenerator::*gen_stmt_fun) (Stmt *stmt);
 typedef Value *(CodeGenerator::*gen_expr_fun) (Expr *expr);
@@ -569,23 +566,10 @@ void CodeGenerator::init_module() {
         return;
     }
 
-    std::string mcpu = codegen::getMCPU();
-    if (mcpu == "native") {
-	    mcpu = sys::getHostCPUName().str();
-    }
-
-    std::string features_str;
-    std::vector<std::string> mattrs = codegen::getMAttrs();
-    if (mattrs.size()) {
-        SubtargetFeatures features;
-        for (unsigned int i = 0; i != mattrs.size(); ++i) {
-            features.AddFeature(mattrs[i]);
-        }
-        features_str = features.getString();
-    }
+    std::string mcpu = sys::getHostCPUName().str();
 
     TargetOptions options;
-    target_machine = target->createTargetMachine(triple.getTriple(), mcpu, features_str, options, llvm::Reloc::PIC_);
+    target_machine = target->createTargetMachine(triple.getTriple(), mcpu, "", options, llvm::Reloc::PIC_);
 
     if (!target_machine) {
         std::cerr << "Error: Could not create target machine.\n";

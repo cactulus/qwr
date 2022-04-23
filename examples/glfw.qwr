@@ -1,8 +1,8 @@
 use "io";
 use "glfw";
-use "gl";
+// use "gl";
 
-error :: (msg: *u8) {
+error :: (msg: string) {
     printf("%s\n", msg);
     exit(1);
 }
@@ -20,7 +20,7 @@ main :: () int {
     glfwMakeContextCurrent(window);
 
     while (!glfwWindowShouldClose(window)) {
-        glClear(GL_COLOR_BUFFER_BIT);
+        // glClear(GL_COLOR_BUFFER_BIT);
 
         glfwSwapBuffers(window);
 
