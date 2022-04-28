@@ -44,6 +44,7 @@ const std::unordered_map<ExprKind, gen_expr_fun> expr_gen_funs = {
 	{FLOAT_LIT, (gen_expr_fun)&CodeGenerator::gen_float_lit},
 	{STRING_LIT, (gen_expr_fun) &CodeGenerator::gen_string_lit},
 	{FUNCTION_CALL, (gen_expr_fun) &CodeGenerator::gen_func_call},
+	{BUILTIN_FUNCTION, (gen_expr_fun)&CodeGenerator::gen_builtin},
 	{COMPARE_ZERO, (gen_expr_fun) &CodeGenerator::gen_compare_zero},
 	{NIL, (gen_expr_fun) &CodeGenerator::gen_nil},
 	{NEW, (gen_expr_fun) &CodeGenerator::gen_new},
@@ -152,32 +153,36 @@ void CodeGenerator::gen_var_def(Stmt *stmt) {
 		Value *type_size_llvm = 0;
 
 		if (var_type->isarray()) {
+			var_ptr = builder->CreateAlloca(var_type->llvm_type);
+
 			auto create_fn = get_builtin("qwr_array_create");
 			auto type_size = llvm_size_of(var_type->element_type->llvm_type);
 			type_size_llvm = ConstantInt::get(u64_ty, type_size);
-			var_ptr = builder->CreateCall(create_fn, { type_size_llvm });
+			auto array_ptr = builder->CreateCall(create_fn, { type_size_llvm });
+			builder->CreateStore(array_ptr, var_ptr);
 		} else {
-			var_ptr = builder->CreateAlloca(stmt->var_def.var->type->llvm_type);
+			var_ptr = builder->CreateAlloca(var_type->llvm_type);
 		}
 
 		if (stmt->var_def.value) {
 			if (stmt->var_def.value->kind == COMPOUND_LIT) {
 				auto init_expr = stmt->var_def.value;
 
-				auto i32_ty = s32_ty;
 				auto values = *init_expr->init.values;
 
 				auto target = var_ptr;
 				if (var_type->isarray()) {
-					auto resize_fn = get_builtin("qwr_array_resize");
+					auto init_fn = get_builtin("qwr_array_init");
 					auto data_fn = get_builtin("qwr_array_data");
+					auto loaded_var_ptr = builder->CreateLoad(var_ptr);
+					auto llvm_values_count = ConstantInt::get(u64_ty, values.size());
 
-					builder->CreateCall(resize_fn, { var_ptr, type_size_llvm });
-					target = builder->CreateCall(data_fn, { var_ptr });
+					builder->CreateCall(init_fn, { loaded_var_ptr, llvm_values_count, type_size_llvm });
+					target = builder->CreateCall(data_fn, { loaded_var_ptr });
 					target = builder->CreatePointerCast(target, var_type->data_type->llvm_type);
 
 					for (int i = 0; i < values.size(); ++i) {
-						auto llvm_index = ConstantInt::get(i32_ty, i);
+						auto llvm_index = ConstantInt::get(s32_ty, i);
 						auto val = gen_expr(values[i]);
 
 						auto tar = builder->CreateInBoundsGEP(target, { llvm_index });
@@ -185,8 +190,8 @@ void CodeGenerator::gen_var_def(Stmt *stmt) {
 					}
 				} else {
 					for (int i = 0; i < values.size(); ++i) {
-						auto llvm_zero = ConstantInt::get(i32_ty, 0);
-						auto llvm_index = ConstantInt::get(i32_ty, i);
+						auto llvm_zero = ConstantInt::get(s32_ty, 0);
+						auto llvm_index = ConstantInt::get(s32_ty, i);
 						auto val = gen_expr(values[i]);
 
 						auto tar = builder->CreateInBoundsGEP(target, { llvm_zero, llvm_index });
@@ -216,7 +221,7 @@ void CodeGenerator::gen_return(Stmt *stmt) {
         } else {
             auto ty = gen_return_type(return_values);
             auto val = builder->CreateAlloca(ty);
-            Value *ret_val = builder->CreateLoad(ty, val);
+            Value *ret_val = builder->CreateLoad(val);
 
             for (int i = 0; i < return_values->size(); ++i) {
                 ret_val = builder->CreateInsertValue(ret_val, gen_expr((*return_values)[i]), i);
@@ -286,7 +291,7 @@ void CodeGenerator::gen_delete(Stmt *stmt) {
 
 	if (target_ty->isarray()) {
 		Function *free_fn = get_builtin("qwr_array_free");
-		Value *target = gen_expr_target(stmt->target_expr);
+		Value *target = builder->CreateLoad(gen_expr_target(stmt->target_expr));
 		builder->CreateCall(free_fn, { target });
 	} else {
 		Function *free_fn = get_builtin("free");
@@ -543,11 +548,11 @@ Value *CodeGenerator::gen_unary(Expr *expr) {
 
 Value *CodeGenerator::gen_deref(Expr *expr) {
     auto target = gen_expr(expr->target);
-    return builder->CreateLoad(expr->type->llvm_type, target);
+    return builder->CreateLoad(target);
 }
 
 Value *CodeGenerator::gen_variable(Expr *expr) {
-	return builder->CreateLoad(expr->var->type->llvm_type, expr->var->llvm_ref);
+	return builder->CreateLoad(expr->var->llvm_ref);
 }
 
 Value *CodeGenerator::gen_int_lit(Expr *expr) {
@@ -612,7 +617,7 @@ Value *CodeGenerator::gen_new(Expr *expr) {
 }
 
 Value *CodeGenerator::gen_member(Expr *expr) {
-    return builder->CreateLoad(expr->type->llvm_type, gen_expr_target(expr));
+    return builder->CreateLoad(gen_expr_target(expr));
 }
 
 Value *CodeGenerator::gen_indexed(Expr *expr) {
@@ -628,7 +633,7 @@ Value *CodeGenerator::gen_expr_target(Expr *expr) {
         auto target = gen_expr_target(expr->target); 
         auto type = expr->target->type->llvm_type;
 
-        return builder->CreateLoad(type, target);
+        return builder->CreateLoad(target);
     }
 
 	if (expr->kind == INDEXED) {
@@ -637,7 +642,7 @@ Value *CodeGenerator::gen_expr_target(Expr *expr) {
 		if (target_ty->isarray()) {
 			auto data_fn = get_builtin("qwr_array_data");
 
-			auto var_ptr = gen_expr_target(expr->indexed.target);
+			auto var_ptr = builder->CreateLoad(gen_expr_target(expr->indexed.target));
 			Value *target = builder->CreateCall(data_fn, { var_ptr });
 			target = builder->CreatePointerCast(target, target_ty->data_type->llvm_type);
 
@@ -696,9 +701,6 @@ Type *CodeGenerator::gen_return_type(std::vector<Expr *> *types) {
     return StructType::get(llvm_context, return_types);
 }
 
-Function *CodeGenerator::get_builtin(const char *name) {
-	return llvm_module->getFunction(name);
-}
 
 int CodeGenerator::llvm_size_of(Type *type) {
     int size = llvm_module->getDataLayout().getTypeSizeInBits(type);    

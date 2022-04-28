@@ -21,6 +21,16 @@ builtin qwr_array_data :: (a: *Array) *u8 {
 	return a.data;
 }
 
+builtin qwr_array_len :: (a: *Array) u64 {
+	return a.len;
+}
+
+builtin qwr_array_init :: (a: *Array, cap: u64, type_size: u64) {
+	a.cap = cap;
+	a.len = cap;
+	a.data = realloc(a.data, a.cap * type_size);
+}
+
 builtin qwr_array_resize :: (a: *Array, type_size: u64) {
 	if a.len >= a.cap {
 		a.cap *= 2;

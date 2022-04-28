@@ -7,7 +7,7 @@
 #include <stack>
 
 #include "lexer.h"
-#include "arena.h"
+#include "alloc.h"
 
 struct LexerInfo {
     const char *input;
@@ -333,7 +333,7 @@ bool is_not_quote(char c) {
 }
 
 const char *escape_str_lit(const char *text) {
-    int sl = strlen(text), nl = sl, i;
+    int sl = strlen(text), nl = sl, i, j;
     char *etext;
 
     for (i = 0; i < sl; ++i) {
@@ -352,15 +352,15 @@ const char *escape_str_lit(const char *text) {
     }
 
     etext = new char [nl + 1];
-    for (i = 0; i < sl; ++i) {
+    for (i = 0, j = 0; i < sl; ++i, ++j) {
         if (text[i] != '\\') {
             etext[i] = text[i]; 
             continue;
         }
 
         char esc = make_escape(text[i+1]);
-        etext[i] = esc;
-
+        etext[j] = esc;
+		i++;
     }
 
     etext[nl] = '\0';

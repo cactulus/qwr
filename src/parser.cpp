@@ -4,6 +4,7 @@
 #include <cstring>
 
 #include "parser.h"
+#include "builtin.h"
 #include "alloc.h"
 #include "manager.h"
 
@@ -858,14 +859,22 @@ Expr *Parser::parse_primary() {
             }
 
             auto unmangled_name = tok->lexeme;
-            auto func_decl = get_func(tok, arguments);
+			if (is_builtin(unmangled_name)) {
+				auto return_type = get_builtin_return_type(unmangled_name);
+				auto expr = make_expr(BUILTIN_FUNCTION, return_type);
+				expr->builtin.name = unmangled_name;
+				expr->builtin.arguments = arguments;
+				check_builtin_func(tok, expr);
+				return expr;
+			} else {
+				auto func_decl = get_func(tok, arguments);
 
-            auto return_types = func_decl->func_def.return_types;
-			auto expr = make_expr(FUNCTION_CALL, (*return_types)[0]);
-			expr->func_call.arguments = arguments;
-            expr->func_call.target_func_decl = func_decl;
-
-            return expr;
+				auto return_types = func_decl->func_def.return_types;
+				auto expr = make_expr(FUNCTION_CALL, (*return_types)[0]);
+				expr->func_call.arguments = arguments;
+				expr->func_call.target_func_decl = func_decl;
+				return expr;
+			}
         }
 
         if (eat_token_if(TOKEN_COLON_COLON)) {
@@ -1071,7 +1080,7 @@ const char *Parser::mangle_func(Stmt *stmt) {
 	std::stringstream ss;
 	ss << unmangled_name;
 	for (auto par : *stmt->func_def.parameters) {
-		ss << "_" << mangle_type(par->type);
+		ss << "_" << typer->mangle_type(par->type);
 	}
 
     if (stmt->func_def.flags & FUNCTION_VARARG)
@@ -1081,36 +1090,6 @@ const char *Parser::mangle_func(Stmt *stmt) {
 	char *mangled = new char[str.length() + 1];
 	std::strcpy(mangled, str.c_str());
 	return mangled;
-}
-
-std::string Parser::mangle_type(QType *type) {
-	if (type->isuint()) {
-		return "u";
-	}
-	if (type->isint()) {
-		return "i";
-	}
-	if (type->isbool()) {
-		return "b";
-	}
-	if (type->isstring()) {
-		return "s";
-	}
-	if (type->ischar()) {
-		return "c";
-	}
-	if (type->isfloat()) {
-		return "f";
-	}
-	if (type->isstruct()) {
-		return type->struct_name;
-	}
-	if (type->ispointer()) {
-		return "p" + mangle_type(type->element_type);
-	}
-	
-	assert(0 && "Tried to call mangle_type on type that is not implemented");
-	return 0;
 }
 
 Scope::Scope(Messenger *_messenger, Scope *_parent) {

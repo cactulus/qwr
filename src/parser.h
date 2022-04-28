@@ -42,6 +42,7 @@ enum ExprKind {
     STRING_LIT,
 	COMPOUND_LIT,
     FUNCTION_CALL,
+	BUILTIN_FUNCTION,
     CAST,
     UNARY,
     DEREF,
@@ -101,6 +102,11 @@ struct Expr {
 			Expr *target;
 			Expr *index;
 		} indexed;
+
+		struct {
+			const char *name;
+			std::vector<Expr *> *arguments;
+		} builtin;
 	};
 };
 
@@ -233,12 +239,13 @@ struct Parser {
     Stmt *get_func(const char *name);
 
 	const char *mangle_func(Stmt *stmt);
-	std::string mangle_type(QType *type);
 
 	Stmt *make_stmt(StmtKind kind);
 	Expr *make_expr(ExprKind kind, QType *type);
 	Variable *make_variable(const char *name, QType *type);
 	Variable *add_or_get_variable(Token *token, QType *type);
+
+	void check_builtin_func(Token *token, Expr *expr);
 };
 
 #endif

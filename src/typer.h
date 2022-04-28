@@ -96,6 +96,8 @@ struct Typer {
 	bool can_convert_implicit(QType *from, QType *to);
 	bool can_convert_explicit(QType *from, QType *to);
 	bool compare(QType *type1, QType *type2);
+
+	std::string mangle_type(QType *type);
 };
 
 #endif

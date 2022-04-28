@@ -94,7 +94,7 @@ QType *Typer::make_pointer(QType *type) {
 }
 
 QType *Typer::make_array(QType *type) {
-	QType *ptty = make_type(TYPE_ARRAY, get("Array")->llvm_type);
+	QType *ptty = make_type(TYPE_ARRAY, make_pointer(get("Array"))->llvm_type);
 	ptty->element_type = type;
 	ptty->data_type = make_pointer(type);
 	return ptty;
@@ -180,4 +180,36 @@ bool Typer::compare(QType *type1, QType *type2) {
         return true;
 
     return b1 == b2;
+}
+
+std::string Typer::mangle_type(QType *type) {
+	switch (type->base) {
+		case TYPE_INT8: return "s8";
+		case TYPE_INT16: return "s16";
+		case TYPE_INT32: return "s32";
+		case TYPE_INT64: return "s64";
+		case TYPE_UINT8: return "u8";
+		case TYPE_UINT16: return "u16";
+		case TYPE_UINT32: return "u32";
+		case TYPE_UINT64: return "u64";
+		case TYPE_F16: return "f16";
+		case TYPE_F32: return "f32";
+		case TYPE_F64: return "f64";
+		case TYPE_BOOL: return "b";
+		case TYPE_CHAR: return "c";
+		case TYPE_STRING: return "s";
+	}
+
+	if (type->isstruct()) {
+		return type->struct_name;
+	}
+	if (type->isarray()) {
+		return "a" + mangle_type(type->element_type);
+	}
+	if (type->ispointer()) {
+		return "p" + mangle_type(type->element_type);
+	}
+
+	assert(0 && "Tried to call mangle_type on type that is not implemented");
+	return 0;
 }

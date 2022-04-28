@@ -50,7 +50,9 @@ struct CodeGenerator {
     llvm::Type *gen_return_type(std::vector<QType *> *types);
     llvm::Type *gen_return_type(std::vector<Expr *> *types);
 
+	llvm::Value *gen_builtin(Expr *expr);
 	llvm::Function *get_builtin(const char *name);
+	llvm::Function *gen_append_func(std::string name, QType *value_type);
 
     int llvm_size_of(llvm::Type *type);
 

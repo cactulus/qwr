@@ -11,6 +11,7 @@
 #include "parser.h"
 #include "alloc.h"
 #include "gen.h"
+#include "builtin.h"
 
 static size_t read_entire_file(const char *file_name, const char **contents);
 static const char *get_lib_path();
@@ -32,6 +33,7 @@ void manager_init(Options *_options) {
     options = _options;
 
 	typer.init(&code_gen.llvm_context, &messenger);
+	init_builtins(&typer);
 	parser.init(&typer, &messenger);
 	code_gen.init(&typer);
 

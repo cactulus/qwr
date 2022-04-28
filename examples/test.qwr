@@ -1,19 +1,29 @@
 use "io";
 
+print_arr :: (a: []int) {
+	i := 0;
+	while i < len(a) {
+		print(a[i]);
+		i++;
+	}
+}
+
 main :: () int {
 	arr := {2, 4, 1} []int;
 
-	print(arr[1]);
-	arr[1] = 10;
-	print(arr[1]);
+	print_arr(arr);
+
+	append(arr, 4);
+	append(arr, 6);
+	append(arr, 7);
+	append(arr, 8);
+	append(arr, 9);
+
+	print("\n\n");
+	
+	print_arr(arr);
 
 	delete arr;
 
 	return 0;
 }
-
-/*
-qwr_array_add :: (a: *Array, v: s32) {
-	qwr_array_resize(a, 4);
-	(a.data as *s32)[a.len++] = v;
-}*/
