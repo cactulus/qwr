@@ -1,5 +1,5 @@
-#ifndef ARENA_H_
-#define ARENA_H_
+#ifndef ALLOC_H_
+#define ALLOC_H_
 
 struct Stmt;
 struct Expr;

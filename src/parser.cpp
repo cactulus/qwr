@@ -4,7 +4,7 @@
 #include <cstring>
 
 #include "parser.h"
-#include "arena.h"
+#include "alloc.h"
 #include "manager.h"
 
 const std::unordered_map<int, int> operator_precedence = {
@@ -66,21 +66,27 @@ Stmt *Parser::parse_top_level_stmt() {
                 parse_struct(tok);
                 return parse_top_level_stmt();
             } else {
-                return parse_func_def(tok);
+                return parse_func_def(tok, 0x0);
             }
         } else {
             messenger->report(lexer.peek_token(2), "Unexpected token");
         }
     }
 
-    if (eat_token_if(TOKEN_EXTERN)) {
-        tok = lexer.peek_token();
+    if (eat_token_if(TOKEN_EXTERN) || eat_token_if(TOKEN_BUILTIN)) {
+		auto flag_token = tok;
+		tok = lexer.peek_token();
         if (tok->type == TOKEN_ATOM) {
             auto pt = lexer.peek_token(1)->type;
             if (pt == TOKEN_COLON_COLON) {
                 lexer.eat_token();
                 lexer.eat_token();
-                return parse_extern_func_def(tok);
+
+				if (flag_token->type == TOKEN_EXTERN) {
+					return parse_extern_func_def(tok);
+				} else {
+					return parse_func_def(tok, FUNCTION_BUILTIN);
+				}
             } else {
                 messenger->report(lexer.peek_token(2), "Unexpected token");
             }
@@ -196,10 +202,11 @@ void Parser::parse_struct(Token *name) {
     typer->insert_custom(name, type);
 }
 
-Stmt *Parser::parse_func_def(Token *name) {
+Stmt *Parser::parse_func_def(Token *name, u8 flags) {
     scope_push();
 
 	auto stmt = make_stmt(FUNCTION_DEFINITION);
+	stmt->func_def.flags = flags;
 	current_function = stmt;
 
     auto cname = name->lexeme;
@@ -235,7 +242,8 @@ Stmt *Parser::parse_func_def(Token *name) {
 }
 
 Stmt *Parser::parse_extern_func_def(Token *name) {
-    auto stmt = make_stmt(EXTERN_FUNCTION);
+    auto stmt = make_stmt(FUNCTION_DEFINITION);
+	stmt->func_def.flags = FUNCTION_EXTERN;
 
     auto cname = name->lexeme;
     stmt->func_def.unmangled_name = cname;
@@ -264,7 +272,6 @@ void Parser::parse_function_parameters(Stmt *stmt, bool add_to_scope) {
 		messenger->report(lexer.peek_token(), "Expected ( after function name");
 	}
 
-    stmt->func_def.isvararg = false;
     stmt->func_def.parameters = new std::vector<Variable *>();
 
 	while (!eat_token_if(')')) {
@@ -290,7 +297,7 @@ void Parser::parse_function_parameters(Stmt *stmt, bool add_to_scope) {
 		eat_token_if(',');
 
 		if (eat_token_if(TOKEN_DOT_DOT)) {
-			stmt->func_def.isvararg = true;
+			stmt->func_def.flags |= FUNCTION_VARARG;
 			if (!eat_token_if(')')) {
 				messenger->report(lexer.peek_token(), "Expected ) after vararg ..");
 			}
@@ -489,7 +496,8 @@ Stmt *Parser::parse_delete() {
     auto tok = lexer.peek_token();
     stmt->target_expr = parse_expr();
 
-    if (!stmt->target_expr->type->ispointer()) {
+	auto target_ty = stmt->target_expr->type;
+    if (!target_ty->ispointer() && !target_ty->isarray()) {
         messenger->report(tok, "Can't delete non-pointer");
     }
     
@@ -533,7 +541,7 @@ Expr *Parser::parse_expr(int prec) {
 }
 
 Expr *Parser::parse_binary(int prec) {
-	auto lhs = parse_access();
+	auto lhs = parse_cast();
 
 	while (true) {
 		auto tok = lexer.peek_token();
@@ -615,6 +623,61 @@ Expr *Parser::parse_binary(int prec) {
 	return lhs;
 }
 
+Expr *Parser::parse_cast() {
+	auto expr = parse_postfix();
+
+	if (eat_token_if(TOKEN_AS)) {
+		auto tok = lexer.peek_token();
+		auto type = parse_type();
+
+		if (!typer->can_convert_explicit(expr->type, type)) {
+			messenger->report(tok, "Invalid cast");
+		}
+
+		return cast(expr, type);
+	}
+
+	return expr;
+}
+
+Expr *Parser::parse_postfix() {
+	auto target = parse_access();
+	auto tok = lexer.peek_token();
+
+	if (eat_token_if(TOKEN_PLUS_PLUS) || eat_token_if(TOKEN_MINUS_MINUS)) {
+		if (!target->type->isint()) {
+			messenger->report(tok, "Can't use ++ or -- on non-integer expression");
+		}
+
+		auto expr = make_expr(UNARY, target->type);
+		expr->unary.target = target;
+		expr->unary.op = tok->type;
+		expr->unary.ispost = true;
+		return expr;
+	}
+
+	if (eat_token_if('[')) {
+		if (!target->type->ispointer() && !target->type->isarray()) {
+			messenger->report(tok, "This type can't be indexed");
+		}
+
+		auto index = parse_expr();
+		eat_token_if(']');
+
+		if (!index->type->isint()) {
+			messenger->report(tok, "Index has to be of integer type");
+		}
+
+		auto indexed = make_expr(INDEXED, target->type->element_type);
+		indexed->indexed.index = index;
+		indexed->indexed.target = target;
+
+		return indexed;
+	}
+	
+	return target;
+}
+
 Expr *Parser::parse_access() {
     auto e = parse_unary();
 
@@ -672,7 +735,7 @@ Expr *Parser::parse_unary() {
     auto tok = lexer.peek_token();
 
     if (eat_token_if('&')) {
-        auto target = parse_postfix();
+        auto target = parse_primary();
         auto target_kind = target->kind;
 
         if (target_kind != VARIABLE) {
@@ -698,9 +761,9 @@ Expr *Parser::parse_unary() {
 		
         return expr;
     } else if (eat_token_if('+')) {
-        return parse_postfix();
+        return parse_primary();
     } else if (eat_token_if('!')) {
-        auto target = parse_postfix();
+        auto target = parse_cast();
         if (!target->type->isbool()) {
             target = make_compare_zero(target);
         }
@@ -711,33 +774,27 @@ Expr *Parser::parse_unary() {
 		
         return expr;
     } else if (eat_token_if('-')) {
-        auto target = parse_postfix();
+        auto target = parse_primary();
 
 		auto expr = make_expr(UNARY, target->type);
         expr->unary.target = target;
         expr->unary.op = '-';
 		
         return expr;
-    }
-
-    return parse_postfix();
-}
-
-Expr *Parser::parse_postfix() {
-    auto expr = parse_primary();
-
-    if (eat_token_if(TOKEN_AS)) {
-		auto tok = lexer.peek_token();
-        auto type = parse_type();
-
-		if (!typer->can_convert_explicit(expr->type, type)) {
-			messenger->report(tok, "Invalid cast");
+	} else if (eat_token_if(TOKEN_PLUS_PLUS) || eat_token_if(TOKEN_MINUS_MINUS)) {
+		auto target = parse_primary();
+		if (!target->type->isint()) {
+			messenger->report(tok, "Can't use ++ or -- on non-integer expression");
 		}
 
-        return cast(expr, type);
-    }
+		auto expr = make_expr(UNARY, target->type);
+		expr->unary.target = target;
+		expr->unary.op = tok->type;
+		expr->unary.ispost = false;
+		return expr;
+	}
 
-    return expr;
+	return parse_primary();
 }
 
 Expr *Parser::parse_primary() {
@@ -841,6 +898,51 @@ Expr *Parser::parse_primary() {
 		return expr;
 	}
 
+	if (eat_token_if('{')) {
+		auto values = new std::vector<Expr *>();
+		while (!eat_token_if('}')) {
+			values->push_back(parse_expr());
+			eat_token_if(',');
+		}
+
+		auto ty_tok = lexer.peek_token();
+		auto ty = parse_type();
+		if (ty->isstruct()) {
+			if (values->size() != ty->fields->size()) {
+				messenger->report(ty_tok, "Compound literal do not match struct type");
+			}
+			for (int i = 0; i < values->size(); ++i) {
+				auto val_type = (*values)[i]->type;
+				auto field_type = (*ty->fields)[i].second;
+				if (!typer->compare(val_type, field_type)) {
+					if (typer->can_convert_implicit(val_type, field_type)) {
+						(*values)[i] = cast((*values)[i], field_type);
+					} else {
+						messenger->report(ty_tok, "Compound literal does not match struct type");
+					}
+				}
+			}
+		} else if (ty->isarray()) {
+			auto arr_type = ty->element_type;
+			for (int i = 0; i < values->size(); ++i) {
+				auto val_type = (*values)[i]->type;
+				if (!typer->compare(val_type, arr_type)) {
+					if (typer->can_convert_implicit(val_type, arr_type)) {
+						(*values)[i] = cast((*values)[i], arr_type);
+					} else {
+						messenger->report(ty_tok, "Compound literal does not match array type");
+					}
+				}
+			}
+		} else {
+			messenger->report(ty_tok, "Illegal type for compound literal.\nExpected struct or array type!");
+		}
+
+		auto expr = make_expr(COMPOUND_LIT, ty);
+		expr->init.values = values;
+		return expr;
+	}
+
 	if (eat_token_if(TOKEN_NEW)) {
 	    auto ty = parse_type();
 	    auto expr = make_expr(NEW, typer->make_pointer(ty));
@@ -913,6 +1015,11 @@ QType *Parser::parse_type() {
 		lexer.eat_token();
 		return typer->make_pointer(parse_type());
 	}
+	if (tok->type == '[' && lexer.peek_token(1)->type == ']') {
+		lexer.eat_token();
+		lexer.eat_token();
+		return typer->make_array(parse_type());
+	}
 	if (tok->type != TOKEN_ATOM) {
 		messenger->report(tok, "Expected type");
 	}
@@ -921,7 +1028,7 @@ QType *Parser::parse_type() {
 }
 
 bool Parser::expr_is_targatable(Expr *expr) {
-    return expr->kind == VARIABLE || expr->kind == DEREF || expr->kind == MEMBER;
+    return expr->kind == VARIABLE || expr->kind == DEREF || expr->kind == MEMBER || expr->kind == INDEXED;
 }
 
 bool Parser::token_is_op(char op, int off) {
@@ -957,7 +1064,8 @@ void Parser::scope_pop() {
 
 const char *Parser::mangle_func(Stmt *stmt) {
     auto unmangled_name = stmt->func_def.unmangled_name;
-	if (strcmp(unmangled_name, "main") == 0) {
+	if (strcmp(unmangled_name, "main") == 0 ||
+		stmt->func_def.flags & FUNCTION_BUILTIN) {
 		return unmangled_name;
 	}
 	std::stringstream ss;
@@ -966,8 +1074,8 @@ const char *Parser::mangle_func(Stmt *stmt) {
 		ss << "_" << mangle_type(par->type);
 	}
 
-    if (stmt->func_def.isvararg)
-        ss << "@@@";
+    if (stmt->func_def.flags & FUNCTION_VARARG)
+        ss << "vararg";
 
 	std::string str = ss.str();
 	char *mangled = new char[str.length() + 1];
@@ -991,10 +1099,18 @@ std::string Parser::mangle_type(QType *type) {
 	if (type->ischar()) {
 		return "c";
 	}
+	if (type->isfloat()) {
+		return "f";
+	}
+	if (type->isstruct()) {
+		return type->struct_name;
+	}
 	if (type->ispointer()) {
 		return "p" + mangle_type(type->element_type);
 	}
-	return "";
+	
+	assert(0 && "Tried to call mangle_type on type that is not implemented");
+	return 0;
 }
 
 Scope::Scope(Messenger *_messenger, Scope *_parent) {
@@ -1053,7 +1169,7 @@ Stmt *Parser::get_func(Token *name_token, std::vector<Expr *> *arguments) {
         auto decl_args = decl->func_def.parameters;
         int decl_ac = decl_args->size();
         int call_ac = arguments->size();
-        bool vararg = decl->func_def.isvararg;
+        bool vararg = decl->func_def.flags & FUNCTION_VARARG;
 
         if (call_ac < decl_ac || (call_ac > decl_ac && !vararg))
             continue;

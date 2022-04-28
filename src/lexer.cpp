@@ -32,13 +32,14 @@ static bool is_not_quote(char c);
 const char *escape_str_lit(const char *text);
 static char make_escape(char c);
 
-const char *operator_chars = "+-=*/();,.{}&|:<>![]@";
+const char *operator_chars = "+-=*/();,.{}&|:<>![]@%";
 
 static std::stack<LexerInfo> backups;
 
 const std::unordered_map<std::string, TokenType> keyword_tokens = {
 	{"return", TOKEN_RETURN},
 	{"extern", TOKEN_EXTERN},
+	{"builtin", TOKEN_BUILTIN},
 	{"as", TOKEN_AS},
 	{"true", TOKEN_TRUE},
 	{"false", TOKEN_FALSE},
@@ -68,6 +69,8 @@ const std::unordered_map<std::string, TokenType> two_char_tokens = {
 	{">=", TOKEN_GT_EQ},
 	{"&&", TOKEN_AND_AND},
 	{"||", TOKEN_BAR_BAR},
+	{"++", TOKEN_PLUS_PLUS},
+	{"--", TOKEN_MINUS_MINUS},
 }; 
 
 void Lexer::init(const char *code, int code_len) {

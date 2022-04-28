@@ -1,0 +1,25 @@
+local_time :: struct {
+	second: int,
+	minute: int,
+	hour: int,
+	mday: int,
+	month: int,
+	year: int,
+	wday: int,
+	yday: int,
+	isdst: int
+}
+
+extern time :: (timer: *s64) s64;
+extern localtime :: (timer: *s64) *local_time;
+extern asctime :: (timeptr: *local_time) string;
+
+get_local_time :: () *local_time {
+	raw_time: s64;
+	local_time: *local_time;
+
+	time(&raw_time);
+	local_time = localtime(&raw_time);
+	
+	return local_time;
+}

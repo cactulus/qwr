@@ -33,6 +33,7 @@ enum QBaseType { /* order is very important */
 	TYPE_ENUM,
 	TYPE_STRUCT,
 	TYPE_STRING,
+	TYPE_ARRAY,
 };
 
 struct QType;
@@ -45,7 +46,16 @@ struct QType {
 	union {
 	    QType *element_type;
         std::vector<const char *> *categories;
-        struct_fields_type *fields;
+
+		struct {
+			QType *element_type;
+			QType *data_type;
+		};
+
+		struct {
+			const char *struct_name;
+			struct_fields_type *fields;
+		};
     };
 
 	bool isint();
@@ -57,6 +67,7 @@ struct QType {
     bool isstruct();
     bool ischar();
     bool isstring();
+	bool isarray();
 
 	/* returns true if in the end, it is an int type in llvm */
 	bool is_int_in_llvm();
@@ -73,6 +84,7 @@ struct Typer {
 	void insert_builtin(const char *type_str, QType *type);
 	void insert_custom(Token *token, QType *type);
 	QType *make_pointer(QType *type);
+	QType *make_array(QType *type);
 	QType *make_struct(const char *name, struct_fields_type *fields);
 	QType *make_type(QBaseType base, llvm::Type *llvm_type);
 

@@ -9,7 +9,7 @@
 
 #include "manager.h"
 #include "parser.h"
-#include "arena.h"
+#include "alloc.h"
 #include "gen.h"
 
 static size_t read_entire_file(const char *file_name, const char **contents);
@@ -31,9 +31,9 @@ static long long loc = 0;
 void manager_init(Options *_options) {
     options = _options;
 
+	typer.init(&code_gen.llvm_context, &messenger);
 	parser.init(&typer, &messenger);
 	code_gen.init(&typer);
-	typer.init(&code_gen.llvm_context, &messenger);
 
 	arena_init();
 

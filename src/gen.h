@@ -21,7 +21,6 @@ struct CodeGenerator {
 
 	void gen_stmt(Stmt *stmt);
 	void gen_func_def(Stmt *stmt);
-	void gen_extern_func_def(Stmt *stmt);
 	void gen_var_def(Stmt *stmt);
 	void gen_return(Stmt *stmt);
 	void gen_if(Stmt *stmt);
@@ -44,15 +43,19 @@ struct CodeGenerator {
 	llvm::Value *gen_nil(Expr *expr);
 	llvm::Value *gen_new(Expr *expr);
 	llvm::Value *gen_member(Expr *expr);
+	llvm::Value *gen_indexed(Expr *expr);
 
 	llvm::Value *gen_expr_target(Expr *expr);
 
     llvm::Type *gen_return_type(std::vector<QType *> *types);
     llvm::Type *gen_return_type(std::vector<Expr *> *types);
 
+	llvm::Function *get_builtin(const char *name);
+
     int llvm_size_of(llvm::Type *type);
 
     void init_module();
+	void init_types();
 	void output(Options *options);
 	void link(Options *options);
 	void optimize();

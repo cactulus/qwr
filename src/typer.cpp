@@ -43,6 +43,10 @@ bool QType::isstring() {
     return base == TYPE_STRING;
 }
 
+bool QType::isarray() {
+	return base == TYPE_ARRAY;
+}
+
 bool QType::is_int_in_llvm() {
 	return isint() || ischar() || isbool();
 }
@@ -89,6 +93,13 @@ QType *Typer::make_pointer(QType *type) {
 	return ptty;
 }
 
+QType *Typer::make_array(QType *type) {
+	QType *ptty = make_type(TYPE_ARRAY, get("Array")->llvm_type);
+	ptty->element_type = type;
+	ptty->data_type = make_pointer(type);
+	return ptty;
+}
+
 QType *Typer::make_struct(const char *name, struct_fields_type *fields) {
     std::vector<Type *> llvm_fields;
 
@@ -100,6 +111,7 @@ QType *Typer::make_struct(const char *name, struct_fields_type *fields) {
     sty->setBody(llvm_fields);
     
     auto ty = make_type(TYPE_STRUCT, sty);
+	ty->struct_name = name;
     ty->fields = fields;
 
     return ty;

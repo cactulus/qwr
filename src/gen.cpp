@@ -25,7 +25,6 @@ typedef Value *(CodeGenerator::*gen_expr_fun) (Expr *expr);
 
 const std::unordered_map<StmtKind, gen_stmt_fun> stmt_gen_funs = {
 	{FUNCTION_DEFINITION, (gen_stmt_fun) &CodeGenerator::gen_func_def},
-	{EXTERN_FUNCTION, (gen_stmt_fun) &CodeGenerator::gen_extern_func_def},
 	{VARIABLE_DEFINITION, (gen_stmt_fun) &CodeGenerator::gen_var_def},
 	{RETURN, (gen_stmt_fun) &CodeGenerator::gen_return},
     {IF, (gen_stmt_fun) &CodeGenerator::gen_if},
@@ -49,11 +48,15 @@ const std::unordered_map<ExprKind, gen_expr_fun> expr_gen_funs = {
 	{NIL, (gen_expr_fun) &CodeGenerator::gen_nil},
 	{NEW, (gen_expr_fun) &CodeGenerator::gen_new},
 	{MEMBER, (gen_expr_fun) &CodeGenerator::gen_member},
+	{INDEXED, (gen_expr_fun) &CodeGenerator::gen_indexed},
 };
 
 std::unordered_map<std::string, Value *> constant_string_literals = {};
 
 static Function *current_function;
+static Type *s32_ty;
+static Type *u8_ty;
+static Type *u64_ty;
 
 void CodeGenerator::init(Typer *_typer) {
 	typer = _typer;
@@ -62,6 +65,7 @@ void CodeGenerator::init(Typer *_typer) {
 	builder = new IRBuilder<>(llvm_context);
 
     init_module();
+	init_types();
 }
 
 void CodeGenerator::gen_stmt(Stmt *stmt) {
@@ -76,12 +80,21 @@ void CodeGenerator::gen_func_def(Stmt *stmt) {
 		parameter_types[i] = (*stmt->func_def.parameters)[i]->type->llvm_type;
 	}
 	auto ret_type = gen_return_type(stmt->func_def.return_types);
-	auto fun_type = FunctionType::get(ret_type, parameter_types, stmt->func_def.isvararg);
+	auto fun_type = FunctionType::get(ret_type, parameter_types, stmt->func_def.flags & FUNCTION_VARARG);
 	auto linkage = Function::ExternalLinkage;
 
- 	auto fn = Function::Create(fun_type, linkage, stmt->func_def.mangled_name, llvm_module);
+	auto name = (stmt->func_def.flags & FUNCTION_EXTERN) ?
+				stmt->func_def.unmangled_name :
+				stmt->func_def.mangled_name;
+
+	auto fn = Function::Create(fun_type, linkage, name, llvm_module);
 
     stmt->func_def.llvm_ref = fn;
+
+	if (stmt->func_def.flags & FUNCTION_EXTERN) {
+		return;
+	}
+
     current_function = fn;
 
 	auto entry = BasicBlock::Create(llvm_context, "", fn);
@@ -103,19 +116,6 @@ void CodeGenerator::gen_func_def(Stmt *stmt) {
     if (builder->GetInsertBlock()->getTerminator() == 0) {
         builder->CreateRetVoid();
     }
-}
-
-void CodeGenerator::gen_extern_func_def(Stmt *stmt) {
-	std::vector<Type *> parameter_types(stmt->func_def.parameters->size());
-	for (int i = 0; i < stmt->func_def.parameters->size(); i++) {
-		parameter_types[i] = (*stmt->func_def.parameters)[i]->type->llvm_type;
-	}
-	auto ret_type = gen_return_type(stmt->func_def.return_types);
-	auto fun_type = FunctionType::get(ret_type, parameter_types, stmt->func_def.isvararg);
-	auto linkage = Function::ExternalLinkage;
-
- 	auto fn = Function::Create(fun_type, linkage, stmt->func_def.unmangled_name, llvm_module);
-    stmt->func_def.llvm_ref = fn;
 }
 
 void CodeGenerator::gen_var_def(Stmt *stmt) {
@@ -145,15 +145,61 @@ void CodeGenerator::gen_var_def(Stmt *stmt) {
             var->llvm_ref = var_ptr;
         }
 	} else {
-		auto var_ptr = builder->CreateAlloca(stmt->var_def.var->type->llvm_type);
+		auto var = stmt->var_def.var;
+		auto var_type = var->type;
+
+		Value *var_ptr = 0;
+		Value *type_size_llvm = 0;
+
+		if (var_type->isarray()) {
+			auto create_fn = get_builtin("qwr_array_create");
+			auto type_size = llvm_size_of(var_type->element_type->llvm_type);
+			type_size_llvm = ConstantInt::get(u64_ty, type_size);
+			var_ptr = builder->CreateCall(create_fn, { type_size_llvm });
+		} else {
+			var_ptr = builder->CreateAlloca(stmt->var_def.var->type->llvm_type);
+		}
+
 		if (stmt->var_def.value) {
-            auto val = gen_expr(stmt->var_def.value);
+			if (stmt->var_def.value->kind == COMPOUND_LIT) {
+				auto init_expr = stmt->var_def.value;
 
-            if (val->getType()->isStructTy()) {
-                val = builder->CreateExtractValue(val, 0);
-            }
+				auto i32_ty = s32_ty;
+				auto values = *init_expr->init.values;
 
-            builder->CreateStore(val, var_ptr);
+				auto target = var_ptr;
+				if (var_type->isarray()) {
+					auto resize_fn = get_builtin("qwr_array_resize");
+					auto data_fn = get_builtin("qwr_array_data");
+
+					builder->CreateCall(resize_fn, { var_ptr, type_size_llvm });
+					target = builder->CreateCall(data_fn, { var_ptr });
+					target = builder->CreatePointerCast(target, var_type->data_type->llvm_type);
+
+					for (int i = 0; i < values.size(); ++i) {
+						auto llvm_index = ConstantInt::get(i32_ty, i);
+						auto val = gen_expr(values[i]);
+
+						auto tar = builder->CreateInBoundsGEP(target, { llvm_index });
+						builder->CreateStore(val, tar);
+					}
+				} else {
+					for (int i = 0; i < values.size(); ++i) {
+						auto llvm_zero = ConstantInt::get(i32_ty, 0);
+						auto llvm_index = ConstantInt::get(i32_ty, i);
+						auto val = gen_expr(values[i]);
+
+						auto tar = builder->CreateInBoundsGEP(target, { llvm_zero, llvm_index });
+						builder->CreateStore(val, tar);
+					}
+				}
+			} else {
+				auto val = gen_expr(stmt->var_def.value);
+				if (val->getType()->isStructTy()) {
+					val = builder->CreateExtractValue(val, 0);
+				}
+				builder->CreateStore(val, var_ptr);
+			}
         }
 
 		stmt->var_def.var->llvm_ref = var_ptr;
@@ -236,18 +282,21 @@ void CodeGenerator::gen_expr_stmt(Stmt *stmt) {
 }
 
 void CodeGenerator::gen_delete(Stmt *stmt) {
-    Function *free_fn = llvm_module->getFunction("free");
-    auto ptr_ty = typer->make_pointer(typer->get("u8"))->llvm_type;
-    if (!free_fn) {
-        auto free_fn_type = FunctionType::get(typer->get("void")->llvm_type, {ptr_ty}, false);
-	    auto linkage = Function::ExternalLinkage;
-        free_fn = Function::Create(free_fn_type, linkage, "free", llvm_module);
-    }
+	auto target_ty = stmt->target_expr->type;
 
-    Value *target = gen_expr(stmt->target_expr);
+	if (target_ty->isarray()) {
+		Function *free_fn = get_builtin("qwr_array_free");
+		Value *target = gen_expr_target(stmt->target_expr);
+		builder->CreateCall(free_fn, { target });
+	} else {
+		Function *free_fn = get_builtin("free");
+		auto ptr_ty = typer->make_pointer(typer->get("u8"))->llvm_type;
 
-    Value *to_free = builder->CreatePointerCast(target, ptr_ty);
-    builder->CreateCall(free_fn, {to_free});
+		Value *target = gen_expr(stmt->target_expr);
+
+		Value *to_free = builder->CreatePointerCast(target, ptr_ty);
+		builder->CreateCall(free_fn, { to_free });
+	}
 }
 
 Value *CodeGenerator::gen_expr(Expr *expr) {
@@ -257,7 +306,6 @@ Value *CodeGenerator::gen_expr(Expr *expr) {
 }
 
 Value *CodeGenerator::gen_binary(Expr *expr) {
-	auto lhs = gen_expr(expr->bin.lhs);
 	auto rhs = gen_expr(expr->bin.rhs);
 	auto top = expr->bin.op;
 	Instruction::BinaryOps op;
@@ -363,6 +411,7 @@ Value *CodeGenerator::gen_binary(Expr *expr) {
 	    auto target = gen_expr_target(expr->bin.lhs);
 	    builder->CreateStore(new_value, target);
 	} else if (ttype_is_binary(top) || top >= TOKEN_ADD_EQ && top <= TOKEN_MOD_EQ) {
+		auto lhs = gen_expr(expr->bin.lhs);
 	    if (is_ptr) {
 	        new_value = builder->CreateInBoundsGEP(expr->type->llvm_type, lhs, rhs);
         } else {
@@ -373,12 +422,14 @@ Value *CodeGenerator::gen_binary(Expr *expr) {
 	        builder->CreateStore(new_value, target);
         }
 	}  else if (ttype_is_conditional(top)) {
+		auto lhs = gen_expr(expr->bin.lhs);
 		if (ty->isfloat()) {
 			new_value = builder->CreateFCmp(cmpop, lhs, rhs);
 		} else {
 			new_value = builder->CreateICmp(cmpop, lhs, rhs);
 		}
     } else if (ttype_is_logical(top)) {
+		auto lhs = gen_expr(expr->bin.lhs);
         BasicBlock *rhs_block = BasicBlock::Create(llvm_context, "", current_function);
         BasicBlock *merge_block = BasicBlock::Create(llvm_context, "", current_function);
 
@@ -463,6 +514,28 @@ Value *CodeGenerator::gen_unary(Expr *expr) {
 			}
             
         } break;
+		case TOKEN_PLUS_PLUS:
+		case TOKEN_MINUS_MINUS: {
+			auto target = gen_expr_target(expr->unary.target);
+			auto loaded = builder->CreateLoad(target);
+			auto type = expr->type->llvm_type;
+			Value *one;
+
+			if (expr->unary.op == TOKEN_PLUS_PLUS) {
+				one = ConstantInt::get(type, 1);
+			} else {
+				one = ConstantInt::get(type, -1);
+			}
+
+			auto val = builder->CreateNSWAdd(loaded, one);
+			builder->CreateStore(val, target);
+
+			if (expr->unary.ispost) {
+				return loaded;
+			} else {
+				return val;
+			}
+		}
     }
 
     return 0;
@@ -529,17 +602,10 @@ Value *CodeGenerator::gen_nil(Expr *expr) {
 }
 
 Value *CodeGenerator::gen_new(Expr *expr) {
-    auto i64_ty = typer->get("u64")->llvm_type;
-    Function *malloc_fn = llvm_module->getFunction("malloc");
-    if (!malloc_fn) {
-        auto ptr_ty = typer->make_pointer(typer->get("u8"))->llvm_type;
-        auto malloc_fn_type = FunctionType::get(ptr_ty, {i64_ty}, false);
-	    auto linkage = Function::ExternalLinkage;
-        malloc_fn = Function::Create(malloc_fn_type, linkage, "malloc", llvm_module);
-    }
+    Function *malloc_fn = get_builtin("malloc");
 
     Type *target_type = expr->alloc_type->llvm_type;
-    Value *type_size = ConstantInt::get(i64_ty, llvm_size_of(target_type));
+    Value *type_size = ConstantInt::get(u64_ty, llvm_size_of(target_type));
 
     Value *mallocd = builder->CreateCall(malloc_fn, {type_size});
     return builder->CreatePointerCast(mallocd, expr->type->llvm_type);
@@ -547,6 +613,10 @@ Value *CodeGenerator::gen_new(Expr *expr) {
 
 Value *CodeGenerator::gen_member(Expr *expr) {
     return builder->CreateLoad(expr->type->llvm_type, gen_expr_target(expr));
+}
+
+Value *CodeGenerator::gen_indexed(Expr *expr) {
+	return builder->CreateLoad(gen_expr_target(expr));
 }
 
 Value *CodeGenerator::gen_expr_target(Expr *expr) {
@@ -561,15 +631,32 @@ Value *CodeGenerator::gen_expr_target(Expr *expr) {
         return builder->CreateLoad(type, target);
     }
 
+	if (expr->kind == INDEXED) {
+		auto index = expr->indexed.index;
+		auto target_ty = expr->indexed.target->type;
+		if (target_ty->isarray()) {
+			auto data_fn = get_builtin("qwr_array_data");
+
+			auto var_ptr = gen_expr_target(expr->indexed.target);
+			Value *target = builder->CreateCall(data_fn, { var_ptr });
+			target = builder->CreatePointerCast(target, target_ty->data_type->llvm_type);
+
+			return builder->CreateInBoundsGEP(target, { gen_expr(index) });
+		} else {
+			auto target = gen_expr(expr->indexed.target);
+
+			return builder->CreateInBoundsGEP(target, { gen_expr(index) });
+		}
+	}
+
     if (expr->kind == MEMBER) {
         auto target = gen_expr_target(expr->member.target);
-		auto i32_ty = typer->get("s32")->llvm_type;
 		auto indices = *expr->member.indices;
 
 		for (int i = 0; i < indices.size(); ++i) {
 			auto index = indices[i];
-			auto llvm_zero = ConstantInt::get(i32_ty, 0);
-			auto llvm_index = ConstantInt::get(i32_ty, index);
+			auto llvm_zero = ConstantInt::get(s32_ty, 0);
+			auto llvm_index = ConstantInt::get(s32_ty, index);
 
 			if ((*expr->member.dereferences)[i]) {
 				target = builder->CreateLoad(target);
@@ -579,6 +666,10 @@ Value *CodeGenerator::gen_expr_target(Expr *expr) {
 
 		return target;
     }
+
+	if (expr->kind == CAST) {
+		return gen_expr_target(expr->target);
+	}
 
     /* unreachable */
     return 0;
@@ -603,6 +694,10 @@ Type *CodeGenerator::gen_return_type(std::vector<Expr *> *types) {
 	}
 
     return StructType::get(llvm_context, return_types);
+}
+
+Function *CodeGenerator::get_builtin(const char *name) {
+	return llvm_module->getFunction(name);
 }
 
 int CodeGenerator::llvm_size_of(Type *type) {
@@ -642,6 +737,12 @@ void CodeGenerator::init_module() {
 
     const auto dl = target_machine->createDataLayout();
     llvm_module->setDataLayout(dl);
+}
+
+void CodeGenerator::init_types() {
+	s32_ty = typer->get("s32")->llvm_type;
+	u8_ty = typer->get("u8")->llvm_type;
+	u64_ty = typer->get("u64")->llvm_type;
 }
 
 void CodeGenerator::output(Options *options) {

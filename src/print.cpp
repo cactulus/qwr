@@ -7,6 +7,7 @@
 const std::unordered_map<TokenType, std::string> keyword_tokens_names = {
 	{TOKEN_RETURN, "return"},
 	{TOKEN_EXTERN, "extern"},
+	{TOKEN_BUILTIN, "builtin"},
 	{TOKEN_AS, "as"},
 	{TOKEN_TRUE, "true"},
 	{TOKEN_FALSE, "false"},
@@ -36,6 +37,8 @@ const std::unordered_map<TokenType, std::string> two_char_tokens_names = {
 	{TOKEN_GT_EQ, "'>='"},
 	{TOKEN_AND_AND, "'&&'"},
 	{TOKEN_BAR_BAR, "'||'"},
+	{TOKEN_PLUS_PLUS, "'++'"},
+	{TOKEN_MINUS_MINUS, "'--'"},
 };
 
 void Token::print() {

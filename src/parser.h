@@ -40,6 +40,7 @@ enum ExprKind {
 	INT_LIT,
 	FLOAT_LIT,
     STRING_LIT,
+	COMPOUND_LIT,
     FUNCTION_CALL,
     CAST,
     UNARY,
@@ -48,6 +49,7 @@ enum ExprKind {
     NIL,
     NEW,
     MEMBER,
+	INDEXED,
 };
 
 struct Expr {
@@ -82,6 +84,7 @@ struct Expr {
         struct {
             Expr *target;
             unsigned char op;
+			bool ispost;
         } unary;
 
         struct {
@@ -89,11 +92,19 @@ struct Expr {
             std::vector<int> *indices;
             std::vector<bool> *dereferences;
         } member;
+
+		struct {
+			std::vector<Expr *> *values;
+		} init;
+
+		struct {
+			Expr *target;
+			Expr *index;
+		} indexed;
 	};
 };
 
 enum StmtKind {
-	EXTERN_FUNCTION,
 	FUNCTION_DEFINITION,
 	VARIABLE_DEFINITION,
 	RETURN,
@@ -107,6 +118,10 @@ enum StmtKind {
 const u8 VAR_CONST = 0x1;
 const u8 VAR_GLOBAL = 0x2;
 const u8 VAR_MULTIPLE = 0x4;
+
+const u8 FUNCTION_EXTERN = 0x1;
+const u8 FUNCTION_BUILTIN = 0x2;
+const u8 FUNCTION_VARARG = 0x4;
 
 struct Stmt {
 	StmtKind kind;
@@ -132,7 +147,7 @@ struct Stmt {
             std::vector<QType *> *return_types;
 			std::vector<Variable *> *parameters;
 			std::vector<Stmt *> *body;
-			bool isvararg;
+			u8 flags;
 		} func_def;
 
 		struct {
@@ -169,7 +184,7 @@ struct Parser {
 
     void parse_enum(Token *name);
     void parse_struct(Token *name);
-	Stmt *parse_func_def(Token *name);
+	Stmt *parse_func_def(Token *name, u8 flags);
 	Stmt *parse_extern_func_def(Token *name);
 
 	Stmt *parse_variable_definition(Token *name_token, u8 flags);
@@ -190,9 +205,10 @@ struct Parser {
 
 	Expr *parse_expr(int prec=1);
 	Expr *parse_binary(int prec);
+	Expr *parse_cast();
+	Expr *parse_postfix();
 	Expr *parse_access();
 	Expr *parse_unary();
-	Expr *parse_postfix();
 	Expr *parse_primary();
 
     Expr *cast(Expr *target, QType *to);

@@ -1,74 +1,19 @@
 use "io";
-use "glfw";
-
-Weekdays :: enum {
-	MONDAY,
-	TUESDAY,
-	WEDNESDAY
-}
-
-Box :: struct {
-	a: int,
-	b: int
-}
-
-Person :: struct {
-	name: string,
-	age: int,
-	fav_day: int
-}
-
-SIX :@ 6;
-
-add :: (a: int, b: int) int {
-	return a + b;
-}
 
 main :: () int {
-	a := 20; // infer type
-	b: int = 10; // specify type
-	c := add(5, 1);
+	arr := {2, 4, 1} []int;
 
-	hhh := 1.23;
-	jjj: float = 123.4567;
+	print(arr[1]);
+	arr[1] = 10;
+	print(arr[1]);
 
-	print(hhh);
-	print(jjj);
-
-	print(a);
-	print(b);
-	print(c);
-
-	d := &c;
-	e := *d;
-
-	printf("%p\n", d);
-    print(e);
-
-	lol := 12931;
-
-	print(lol);
-	
-	a += 5;
-	print(a);
-	
-	box: Box;
-	box.a = 10;
-	box.b = 20;
-
-	printf("Box %d %d\n", box.a, box.b);
-
-	// let box2: Box = {5, 2}; // init ((we dont have that yet)) 
-	// printf("Box2 %d %d\n", box2.a, box2.b);
-	
-	peter := new Person;
-	peter.name = "Peter";
-	peter.age = 19;
-	peter.fav_day = Weekdays::TUESDAY;
-
-	printf("Person: '%s' %d %d\n", peter.name, peter.age, peter.fav_day);
-
-	delete peter; // free allocated memory
+	delete arr;
 
 	return 0;
 }
+
+/*
+qwr_array_add :: (a: *Array, v: s32) {
+	qwr_array_resize(a, 4);
+	(a.data as *s32)[a.len++] = v;
+}*/

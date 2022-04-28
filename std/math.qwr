@@ -1,0 +1,29 @@
+PI :@ 3.14159265359
+
+extern cos :: (x: f64) f64;
+extern acos :: (x: f64) f64;
+extern sin :: (x: f64) f64;
+extern asin :: (x: f64) f64;
+extern tan :: (x: f64) f64;
+extern atan :: (x: f64) f64;
+
+extern ceil :: (x: f64) f64;
+extern floor :: (x: f64) f64;
+
+extern pow :: (x: f64, y: f64) f64;
+extern sqrt :: (x: f64) f64;
+extern exp :: (x: f64) f64;
+
+min :: (a: int, b: int) int {
+	if a < b
+		return a;
+
+	return b;
+}
+
+max :: (a: int, b: int) int {
+	if a > b
+		return a;
+	
+	return b;
+}
