@@ -7,32 +7,35 @@ LLVM \
 gcc \
 clang on windows (for now)
 
-### Step by Step Installation
+### Step by Step Installation (Linux)
 > git clone https://github.com/cactulus/qwr.git \
 > cd qwr \
 > sudo make clean install
 
 ## Basic Documentation
-Semicolons are optional in qwr. \
+Semicolons are mostly optional in qwr (recommended to use them). \
 Single line comments denoted by a double slash //
 Multi line comments denoted by /* */
 
 ### Builtin-Types
 s8, s16, s32, s64 -> integer types \
 u8, u16, u32, u64 -> unsigned integer types \
+f16, f32, f64 -> floating pointer types \
 bool -> boolean type \
 string, pointers, char \
 int -> s32 \
-uint -> u32
+uint -> u32 \
+enums, structs \
+arrays
 
 ### Function Declaration / Definition
 Every qwr program has to have an main function without parameters and returning an s32.
 ```Rust
-test :: (a: i32) s32;
+test :: (a i32) s32;
 
-extern printf :: (fmt: *u8, ..) // extern function. '..' indicates varargs
+extern printf :: (fmt *u8, ..) // extern function. '..' indicates varargs
 
-sub :: (a: int, b: int) int, int { // multiple return values
+sub :: (a int, b int) int, int { // multiple return values
     return a - b, b - a;
 }
 
@@ -74,9 +77,9 @@ Weekdays :: enum {
 }
 
 Person :: struct {
-	name: string,
-	age: int,
-	fav_day: int
+	name string,
+	age int,
+	fav_day int
 }
 ```
 
@@ -85,6 +88,29 @@ Person :: struct {
 num := new int; // allocation with 'new'
 
 delete num; // freeing with 'delete'
+```
+
+## Arrays
+```Cpp
+print_arr :: (a []int) {
+	i := 0;
+	while i < len(a) {
+		print(a[i]);
+		i++;
+	}
+}
+
+arr := {2, 4, 1} []int;
+
+print_arr(arr);
+
+append(arr, 4);
+append(arr, 6);
+print("\n\n");
+
+print_arr(arr);
+
+delete arr;
 ```
 
 ## Standard Library
