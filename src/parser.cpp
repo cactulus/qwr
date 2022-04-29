@@ -188,9 +188,6 @@ void Parser::parse_struct(Token *name) {
             messenger->report(tok, "Expected identifier");
         }
 
-		if (!eat_token_if(':')) {
-			messenger->report(lexer.peek_token(), "Expected : after struct field name");
-		}
 
         auto fty = parse_type();
 
@@ -283,9 +280,6 @@ void Parser::parse_function_parameters(Stmt *stmt, bool add_to_scope) {
 		}
 
 		auto pname = tok->lexeme;
-		if (!eat_token_if(':')) {
-			messenger->report(lexer.peek_token(), "Expected : after parameter name");
-		}
 
 		auto ptype = parse_type();
 		auto var = make_variable(pname, ptype);

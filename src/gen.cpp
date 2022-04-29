@@ -249,7 +249,10 @@ void CodeGenerator::gen_if(Stmt *stmt) {
     builder->CreateCondBr(cmp, true_block, false_block);
     builder->SetInsertPoint(true_block);
     gen_stmt(stmt->if_.then);
-    builder->CreateBr(stmt->if_.otherwise ? after_block : false_block);
+	if (!true_block->getTerminator()) {
+		builder->CreateBr(stmt->if_.otherwise ? after_block : false_block);
+	}
+
     builder->SetInsertPoint(false_block);
     if (stmt->if_.otherwise) {
         gen_stmt(stmt->if_.otherwise);
@@ -420,7 +423,11 @@ Value *CodeGenerator::gen_binary(Expr *expr) {
 	    if (is_ptr) {
 	        new_value = builder->CreateInBoundsGEP(expr->type->llvm_type, lhs, rhs);
         } else {
-		    new_value = builder->CreateBinOp(op, lhs, rhs);
+			if (op == BinaryOperator::Add) {
+				new_value = builder->CreateNSWAdd(lhs, rhs);
+			} else {
+				new_value = builder->CreateBinOp(op, lhs, rhs);
+			}
         }
         if (top >= TOKEN_ADD_EQ && top <= TOKEN_MOD_EQ) {
 	        auto target = gen_expr_target(expr->bin.lhs);
@@ -753,16 +760,16 @@ void CodeGenerator::output(Options *options) {
     }
 
 #ifdef _WIN32
-    std::error_code std_error;
-    auto out = new ToolOutputFile(options->ll_file, std_error, sys::fs::OF_None);
-    if (!out) {
-        std::cerr << "Could not open file " << options->ll_file << "\n";
-        return;
-    }
+	std::error_code std_error;
+	auto out = new ToolOutputFile(options->ll_file, std_error, sys::fs::OF_None);
+	if (!out) {
+		std::cerr << "Could not open file " << options->ll_file << "\n";
+		return;
+	}
 
-    raw_pwrite_stream *os = &out->os();
+	raw_pwrite_stream *os = &out->os();
 
-    llvm_module->print(*os, nullptr);
+	llvm_module->print(*os, nullptr);
 #else
     std::error_code std_error;
     auto out = new ToolOutputFile(options->obj_file, std_error, sys::fs::OF_None);

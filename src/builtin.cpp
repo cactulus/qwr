@@ -141,38 +141,3 @@ Function *CodeGenerator::gen_append_func(std::string name, QType *value_type) {
 	builder->SetInsertPoint(old_insert_point);
 	return fn;
 }
-/*; Function Attrs: nounwind
-define void @qwr_array_addhaha_pArray_s32(%Array* nocapture, i32) local_unnamed_addr #0 {
-  %3 = getelementptr inbounds %Array, %Array* %0, i64 0, i32 2
-  %4 = load i64, i64* %3, align 8
-  %5 = getelementptr inbounds %Array, %Array* %0, i64 0, i32 1
-  %6 = load i64, i64* %5, align 8
-  %7 = icmp slt i64 %6, %4
-  br i1 %7, label %.qwr_array_resize.exit_crit_edge, label %8
-
-.qwr_array_resize.exit_crit_edge:                 ; preds = %2
-  %.phi.trans.insert = bitcast %Array* %0 to i32**
-  %.pre = load i32*, i32** %.phi.trans.insert, align 8
-  br label %qwr_array_resize.exit
-
-; <label>:8:                                      ; preds = %2
-  %9 = shl i64 %4, 1
-  store i64 %9, i64* %3, align 8
-  %10 = getelementptr inbounds %Array, %Array* %0, i64 0, i32 0
-  %11 = load i8*, i8** %10, align 8
-  %12 = shl i64 %4, 3
-  %13 = tail call i8* @realloc(i8* %11, i64 %12) #0
-  store i8* %13, i8** %10, align 8
-  %14 = bitcast i8* %13 to i32*
-  %.pre1 = load i64, i64* %5, align 8
-  br label %qwr_array_resize.exit
-
-qwr_array_resize.exit:                            ; preds = %.qwr_array_resize.exit_crit_edge, %8
-  %15 = phi i64 [ %6, %.qwr_array_resize.exit_crit_edge ], [ %.pre1, %8 ]
-  %16 = phi i32* [ %.pre, %.qwr_array_resize.exit_crit_edge ], [ %14, %8 ]
-  %17 = add nsw i64 %15, 1
-  store i64 %17, i64* %5, align 8
-  %18 = getelementptr inbounds i32, i32* %16, i64 %15
-  store i32 %1, i32* %18, align 4
-  ret void
-}*/

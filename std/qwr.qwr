@@ -1,15 +1,15 @@
-extern strcmp :: (s1: string, s2: string) s32;
-extern malloc :: (size: u64) *u8;
-extern realloc :: (ptr: *u8, size: u64) *u8;
-extern free :: (ptr: *u8);
+extern strcmp :: (s1 string, s2 string) s32;
+extern malloc :: (size u64) *u8;
+extern realloc :: (ptr *u8, size u64) *u8;
+extern free :: (ptr *u8);
 
 Array :: struct {
-	data: *u8,
-	len: u64,
-	cap: u64
+	data *u8,
+	len u64,
+	cap u64
 }
 
-builtin qwr_array_create :: (type_size: u64) *Array {
+builtin qwr_array_create :: (type_size u64) *Array {
 	a := new Array;
 	a.data = malloc(type_size);
 	a.cap = 1;
@@ -17,28 +17,28 @@ builtin qwr_array_create :: (type_size: u64) *Array {
 	return a;
 }
 
-builtin qwr_array_data :: (a: *Array) *u8 {
+builtin qwr_array_data :: (a *Array) *u8 {
 	return a.data;
 }
 
-builtin qwr_array_len :: (a: *Array) u64 {
+builtin qwr_array_len :: (a *Array) u64 {
 	return a.len;
 }
 
-builtin qwr_array_init :: (a: *Array, cap: u64, type_size: u64) {
+builtin qwr_array_init :: (a *Array, cap u64, type_size u64) {
 	a.cap = cap;
 	a.len = cap;
 	a.data = realloc(a.data, a.cap * type_size);
 }
 
-builtin qwr_array_resize :: (a: *Array, type_size: u64) {
+builtin qwr_array_resize :: (a *Array, type_size u64) {
 	if a.len >= a.cap {
 		a.cap *= 2;
 		a.data = realloc(a.data, a.cap * type_size);
 	}
 }
 
-builtin qwr_array_free :: (a: *Array) {
+builtin qwr_array_free :: (a *Array) {
 	i := 0;
 	while i < a.len {
 		delete a.data;
