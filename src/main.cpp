@@ -16,7 +16,11 @@ int main(int argc, char *argv[]) {
     if (argc <= 1) {
         std::cout << "usage: qwr <FILE>\n";
         std::cout << "\t -c\t\tCompile only\n";
-        std::cout << "\t--release\tRelease build\n";
+        std::cout << "\t-release\tRelease build\n";
+		std::cout << "\t-debug\tDebug build\n";
+		std::cout << "\t-l\tLinker flags\n";
+		std::cout << "\t-print-ir\tPrint LLVM IR\n";
+		std::cout << "\t-x64\tUse x64 backend\n";
         return 0;
     }
 
@@ -35,6 +39,8 @@ int main(int argc, char *argv[]) {
             options.flags |= PRINT_LLVM;
         } else if (strcmp(arg, "-c") == 0) {
             options.flags |= COMPILE_ONLY;
+		} else if (strcmp(arg, "-x64") == 0) {
+			options.flags |= X64_BACKEND;
         } else if (strcmp(arg, "-l") == 0) {
             const char *lib = *argv++;
             argc--;

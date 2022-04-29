@@ -10,35 +10,47 @@
 #include "manager.h"
 #include "parser.h"
 #include "alloc.h"
-#include "gen.h"
+#include "llvmgen.h"
+#include "x64.h"
 #include "builtin.h"
 
+typedef void(*code_gen_func)(Stmt *stmt);
+
+static void llvm_gen_stmt(Stmt *stmt);
 static size_t read_entire_file(const char *file_name, const char **contents);
 static const char *get_lib_path();
 
 const char *LIB_PATH;
 
 static Options *options;
-static CodeGenerator code_gen;
+static CodeGenerator llvm_code_gen;
 static Messenger messenger;
 static Parser parser;
 static Typer typer;
 
 static long long parse_time = 0;
-static long long llvm_time = 0;
+static long long gen_time = 0;
 static long long link_time = 0;
 static long long loc = 0;
+
+static code_gen_func gen_func;
 
 void manager_init(Options *_options) {
     options = _options;
 
-	typer.init(&code_gen.llvm_context, &messenger);
+	typer.init(&llvm_code_gen.llvm_context, &messenger);
 	init_builtins(&typer);
 	parser.init(&typer, &messenger);
-	code_gen.init(&typer);
+
+	if (options->flags & X64_BACKEND) {
+		gen_func = x64_gen;
+		x64_init();
+	} else {
+		gen_func =  llvm_gen_stmt;
+		llvm_code_gen.init(&typer);
+	}
 
 	arena_init();
-
 	LIB_PATH = get_lib_path();
 }
 
@@ -51,7 +63,10 @@ void manager_run() {
     messenger.init(code);
     parser.lexer.init(code, code_len);
 
-    manager_add_library("qwr");
+
+	if (!(options->flags & X64_BACKEND)) {
+		manager_add_library("qwr");
+	}
 
     Stmt *stmt;
 
@@ -69,43 +84,54 @@ void manager_run() {
 
         start = TIMER_NOW;
 
-        code_gen.gen_stmt(stmt);
+		gen_func(stmt);
 
         end = TIMER_NOW;
         diff = TIMER_DIFF(start, end);
 
-        llvm_time += diff;
+		gen_time += diff;
 	}
 
 	auto start = TIMER_NOW;
 
-	code_gen.output(options);
+	if (options->flags & X64_BACKEND) {
+		x64_dump(options);
+	} else {
+		llvm_code_gen.output(options);
 
-	auto end = TIMER_NOW;
-	auto diff = TIMER_DIFF(start, end);
+		auto end = TIMER_NOW;
+		auto diff = TIMER_DIFF(start, end);
 
-	llvm_time += diff;
+		gen_time += diff;
 
-	start = TIMER_NOW;
+		start = TIMER_NOW;
 
-    if ((options->flags & COMPILE_ONLY) == 0) {
-	    code_gen.link(options);
-    }
+		if ((options->flags & COMPILE_ONLY) == 0) {
+			llvm_code_gen.link(options);
+		}
 
-	code_gen.dump(options);
+		if (options->flags & PRINT_LLVM) {
+			llvm_code_gen.dump(options);
+		}
 
-	end = TIMER_NOW;
-	diff = TIMER_DIFF(start, end);
-	link_time = diff;
+		end = TIMER_NOW;
+		diff = TIMER_DIFF(start, end);
+		link_time = diff;
+	}
 
     auto total_end = std::chrono::steady_clock::now();
     auto total_time = TIMER_DIFF(total_start, total_end);
 
     std::cout << "Program LOC: " << loc << "\n";
-    std::cout << "Compilation time: " << (total_time / 1000) << " ms\n";
-	std::cout << "Parse time: " << (parse_time / 1000) << " ms\n";
-	std::cout << "LLVM time: " << (llvm_time / 1000) << " ms\n";
-	std::cout << "Link time: " << (link_time / 1000) << " ms\n";
+    std::cout << "Compilation: " << (total_time / 1000) << " ms\n";
+	std::cout << "Parsing: " << (parse_time / 1000) << " ms\n";
+
+	if (options->flags & X64_BACKEND) {
+		std::cout << "x64 backend: " << (gen_time / 1000) << " ms\n";
+	} else {
+		std::cout << "LLVM backend: " << (gen_time / 1000) << " ms\n";
+	}
+	std::cout << "Linking: " << (link_time / 1000) << " ms\n";
 }
 
 void manager_add_library(const char *lib_name) {
@@ -137,12 +163,12 @@ void manager_add_library(const char *lib_name) {
 
         start = TIMER_NOW;
 
-        code_gen.gen_stmt(stmt);
+		gen_func(stmt);
 
         end = TIMER_NOW;
         diff = TIMER_DIFF(start, end);
 
-        llvm_time += diff;
+        gen_time += diff;
 	}
 
     parser.has_reached_end = false;
@@ -153,6 +179,10 @@ void manager_add_flags(const char *flags) {
 #ifndef _WIN32 // TODO (niko) make available on windows?
     options->linker_flags.push_back(flags);
 #endif
+}
+
+void llvm_gen_stmt(Stmt *stmt) {
+	llvm_code_gen.gen_stmt(stmt);
 }
 
 size_t read_entire_file(const char *file_name, const char **contents) {

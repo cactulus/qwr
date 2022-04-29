@@ -15,7 +15,7 @@
 #include "llvm/Transforms/IPO/PassManagerBuilder.h"
 
 #include "lexer.h"
-#include "gen.h"
+#include "llvmgen.h"
 #include "manager.h"
 
 using namespace llvm;
@@ -844,17 +844,14 @@ void CodeGenerator::optimize() {
 }
 
 void CodeGenerator::dump(Options *options) {
-    if (options->flags & PRINT_LLVM) {
-        std::error_code std_error;
-        auto out = new ToolOutputFile(options->ll_file, std_error, sys::fs::OF_None);
-        if (!out) {
-            std::cerr << "Could not open file " << options->ll_file << "\n";
-            return;
-        }
-
-        raw_pwrite_stream *os = &out->os();
-        llvm_module->print(*os, nullptr);
-        out->keep();
+    std::error_code std_error;
+    auto out = new ToolOutputFile(options->ll_file, std_error, sys::fs::OF_None);
+    if (!out) {
+        std::cerr << "Could not open file " << options->ll_file << "\n";
+        return;
     }
-    // llvm_module->print(errs(), 0);
+
+    raw_pwrite_stream *os = &out->os();
+    llvm_module->print(*os, nullptr);
+    out->keep();
 }

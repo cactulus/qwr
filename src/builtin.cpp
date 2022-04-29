@@ -8,7 +8,7 @@
 #include <llvm/IR/Type.h>
 #include <llvm/IR/Module.h>
 
-#include "gen.h"
+#include "llvmgen.h"
 #include "parser.h"
 #include "builtin.h"
 

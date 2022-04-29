@@ -10,6 +10,7 @@ const u8 COMPILE_ONLY = 0x1;
 const u8 OPTIMIZE = 0x2;
 const u8 DEBUG = 0x4;
 const u8 PRINT_LLVM = 0x8;
+const u8 X64_BACKEND = 0x10;
 
 struct Options {
     std::vector<const char *> linker_flags;
