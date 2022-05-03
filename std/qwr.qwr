@@ -1,4 +1,5 @@
 extern strcmp :: (s1 string, s2 string) s32;
+extern strlen :: (s string) u64;
 extern malloc :: (size u64) *u8;
 extern realloc :: (ptr *u8, size u64) *u8;
 extern free :: (ptr *u8);

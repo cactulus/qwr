@@ -68,6 +68,27 @@ while x < 10 {
 }
 ```
 
+## For Statement
+```Rust
+for i := 0..10 {
+    print(i);
+}
+
+for 0..10 {
+	print(it); // it <-- standard variable
+}
+
+str := "Hello World!";
+for str {
+	print(it); // prints all characters
+}
+
+arr := {2, 8, 5, 1, 6} []int;";
+for v := arr {
+	print(v); // prints all values
+}
+```
+
 ## Structs end Enums
 ```Rust
 Weekdays :: enum {

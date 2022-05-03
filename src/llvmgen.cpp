@@ -29,6 +29,7 @@ const std::unordered_map<StmtKind, gen_stmt_fun> stmt_gen_funs = {
 	{RETURN, (gen_stmt_fun) &CodeGenerator::gen_return},
     {IF, (gen_stmt_fun) &CodeGenerator::gen_if},
     {WHILE, (gen_stmt_fun) &CodeGenerator::gen_while},
+	{FOR, (gen_stmt_fun)&CodeGenerator::gen_for},
     {BLOCK, (gen_stmt_fun) &CodeGenerator::gen_block},
 	{EXPR_STMT, (gen_stmt_fun) &CodeGenerator::gen_expr_stmt},
 	{DELETE, (gen_stmt_fun) &CodeGenerator::gen_delete},
@@ -278,6 +279,84 @@ void CodeGenerator::gen_while(Stmt *stmt) {
     builder->CreateBr(cond_block);
 
     builder->SetInsertPoint(after_block); 
+}
+
+void CodeGenerator::gen_for(Stmt *stmt) {
+	auto size_t = typer->get("u64")->llvm_type;
+	Value *iterator_val;
+	Value *from;
+	Value *to;
+	Type *var_type;
+
+	if (stmt->for_.is_range) {
+		from = gen_expr(stmt->for_.range_from);
+		to = gen_expr(stmt->for_.range_to);
+		var_type = size_t;
+	} else {
+		from = ConstantInt::get(size_t, 0);
+
+		iterator_val = gen_expr_target(stmt->for_.iterator);
+		auto ty = stmt->for_.iterator->type;
+		var_type = stmt->for_.var->type->llvm_type;
+		Function *f;
+		if (ty->isarray()) {
+			f = get_builtin("qwr_array_len");
+		} else {
+			f = get_builtin("strlen");
+		}
+		to = builder->CreateCall(f, builder->CreateLoad(iterator_val));
+	}
+
+	auto cond_block = BasicBlock::Create(llvm_context, "", current_function);
+	auto body_block = BasicBlock::Create(llvm_context, "", current_function);
+	auto inc_block = BasicBlock::Create(llvm_context, "", current_function);
+	auto after_block = BasicBlock::Create(llvm_context, "", current_function);
+
+	auto inc_var = builder->CreateAlloca(size_t);
+	auto var = stmt->for_.is_range ? inc_var : builder->CreateAlloca(var_type);
+	stmt->for_.var->llvm_ref = var;
+
+	builder->CreateStore(from, inc_var);
+
+	builder->CreateBr(cond_block);
+	builder->SetInsertPoint(cond_block);
+
+	auto loaded_index = builder->CreateLoad(inc_var);
+	auto cmp = builder->CreateICmpSLT(loaded_index, to);
+	builder->CreateCondBr(cmp, body_block, after_block);
+
+	builder->SetInsertPoint(body_block);
+
+	loaded_index = builder->CreateLoad(inc_var);
+	if (!stmt->for_.is_range) {
+		auto it_ty = stmt->for_.iterator->type;
+		if (it_ty->isarray()) {
+			auto data_type = stmt->for_.iterator->type->data_type->llvm_type;
+			auto var_val = gen_array_indexed(iterator_val, data_type, loaded_index);
+
+			auto loaded = builder->CreateLoad(var_val);
+			builder->CreateStore(loaded, var);
+		} else {
+			auto var_val = gen_string_indexed(iterator_val, loaded_index);
+
+			auto loaded = builder->CreateLoad(var_val);
+			builder->CreateStore(loaded, var);
+		}
+	}
+
+	gen_stmt(stmt->for_.body);
+	builder->CreateBr(inc_block);
+
+	builder->SetInsertPoint(inc_block);
+	loaded_index = builder->CreateLoad(inc_var);
+	auto added = builder->CreateNSWAdd(
+		loaded_index,
+		ConstantInt::get(size_t, 1)
+	);
+	builder->CreateStore(added, inc_var);
+	builder->CreateBr(cond_block);
+
+	builder->SetInsertPoint(after_block);
 }
 
 void CodeGenerator::gen_block(Stmt *stmt) {
@@ -647,13 +726,9 @@ Value *CodeGenerator::gen_expr_target(Expr *expr) {
 		auto index = expr->indexed.index;
 		auto target_ty = expr->indexed.target->type;
 		if (target_ty->isarray()) {
-			auto data_fn = get_builtin("qwr_array_data");
-
-			auto var_ptr = builder->CreateLoad(gen_expr_target(expr->indexed.target));
-			Value *target = builder->CreateCall(data_fn, { var_ptr });
-			target = builder->CreatePointerCast(target, target_ty->data_type->llvm_type);
-
-			return builder->CreateInBoundsGEP(target, { gen_expr(index) });
+			return gen_array_indexed(gen_expr_target(expr->indexed.target), target_ty->data_type->llvm_type, gen_expr(index));
+		} else if (target_ty->isstring()) {
+			return gen_string_indexed(gen_expr_target(expr->indexed.target), gen_expr(index));
 		} else {
 			auto target = gen_expr(expr->indexed.target);
 
@@ -685,6 +760,21 @@ Value *CodeGenerator::gen_expr_target(Expr *expr) {
 
     /* unreachable */
     return 0;
+}
+
+Value *CodeGenerator::gen_array_indexed(Value *arr, Type *arr_ty, Value *index) {
+	auto data_fn = get_builtin("qwr_array_data");
+
+	auto var_ptr = builder->CreateLoad(arr);
+	Value *target = builder->CreateCall(data_fn, { var_ptr });
+	target = builder->CreatePointerCast(target, arr_ty);
+
+	return builder->CreateInBoundsGEP(target, { index });
+}
+
+Value *CodeGenerator::gen_string_indexed(Value *str, Value *index) {
+	auto str_ptr = builder->CreateLoad(str);
+	return builder->CreateInBoundsGEP(str_ptr, { index });
 }
 
 Type *CodeGenerator::gen_return_type(std::vector<QType *> *types) {

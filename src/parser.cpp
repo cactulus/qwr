@@ -143,6 +143,10 @@ Stmt *Parser::parse_stmt() {
         return parse_while();
     }
 
+	if (eat_token_if(TOKEN_FOR)) {
+		return parse_for();
+	}
+
 	if (eat_token_if(TOKEN_RETURN)) {
 		return parse_return();
 	}
@@ -445,6 +449,67 @@ Stmt *Parser::parse_while() {
     return stmt;
 }
 
+Stmt *Parser::parse_for() {
+	auto var_tok = lexer.peek_token();
+	auto stmt = make_stmt(FOR);
+
+	Variable *var = 0;
+	QType *iterator_type = 0;
+
+	scope_push();
+
+	if (lexer.peek_token(1)->type == ':' && lexer.peek_token(2)->type == '=') {
+		if (var_tok->type != TOKEN_ATOM) {
+			messenger->report(var_tok, "Expected variable name");
+		}
+
+		lexer.eat_token();
+		lexer.eat_token();
+		lexer.eat_token();
+
+		var = make_variable(var_tok->lexeme, 0);
+		scope->add(var_tok, var);
+	} else {
+		var = make_variable("it", 0);
+		scope->add_replace(var);
+	}
+
+	auto iterator = parse_expr();
+	if (eat_token_if(TOKEN_DOT_DOT)) {
+		auto size_ty = typer->get("u64");
+		auto range_to = parse_expr();
+		stmt->for_.range_from = cast(iterator, size_ty);
+		stmt->for_.range_to = cast(range_to, size_ty);
+		stmt->for_.is_range = true;
+
+		if (!iterator->type->isint() || !range_to->type->isint()) {
+			messenger->report(var_tok, "From and range expressions have to be integer expressions!");
+		}
+		iterator_type = size_ty;
+	} else {
+		stmt->for_.iterator = iterator;
+		stmt->for_.is_range = false;
+
+		if (iterator->type->isstring()) {
+			iterator_type = typer->get("char");
+		} else if (iterator->type->isarray()) {
+			iterator_type = iterator->type->element_type;
+		} else {
+			messenger->report(var_tok, "Iterator has to be of type array or string");
+		}
+	}
+
+	var->type = iterator_type;
+
+	auto body = parse_stmt();
+	scope_pop();
+
+	stmt->for_.var = var;
+	stmt->for_.body = body;
+
+	return stmt;
+}
+
 Stmt *Parser::parse_return() {
     auto return_types = current_function->func_def.return_types;
     std::vector<Expr *> *return_values;
@@ -652,7 +717,7 @@ Expr *Parser::parse_postfix() {
 	}
 
 	if (eat_token_if('[')) {
-		if (!target->type->ispointer() && !target->type->isarray()) {
+		if (!target->type->ispointer() && !target->type->isarray() && !target->type->isstring()) {
 			messenger->report(tok, "This type can't be indexed");
 		}
 
@@ -1097,6 +1162,11 @@ void Scope::add(Token *token, Variable *var) {
 		messenger->report(token, "Variable already defined");
 	}
 	variables.insert(std::make_pair(sname, var));
+}
+
+void Scope::add_replace(Variable *var) {
+	auto sname = std::string(var->name);
+	variables[sname] = var;
 }
 
 Variable *Scope::find(Token *token) {

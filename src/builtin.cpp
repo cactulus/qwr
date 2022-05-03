@@ -34,11 +34,12 @@ QType *get_builtin_return_type(const char *name) {
 void Parser::check_builtin_func(Token *token, Expr *expr) {
 	auto args = *expr->builtin.arguments;
 	if (BUILTIN(expr, "len")) {
+		auto ty = args[0]->type;
 		if (args.size() > 1 || args.size() < 1) {
-			messenger->report(token, "Expected one argument of type array");
+			messenger->report(token, "Expected one argument of type string or array");
 		}
-		if (!args[0]->type->isarray()) {
-			messenger->report(token, "Expected one argument of type array");
+		if (!ty->isarray() && !ty->isstring()) {
+			messenger->report(token, "Expected one argument of type string or array");
 		}
 		return;
 	}
@@ -70,9 +71,16 @@ Value *CodeGenerator::gen_builtin(Expr *expr) {
 	auto args = *expr->builtin.arguments;
 
 	if (BUILTIN(expr, "len")) {
-		auto target = builder->CreateLoad(gen_expr_target(args[0]));
-		auto fn = get_builtin("qwr_array_len");
-		return builder->CreateCall(fn, { target });
+		auto ty = args[0]->type;
+		if (ty->isarray()) {
+			auto target = builder->CreateLoad(gen_expr_target(args[0]));
+			auto fn = get_builtin("qwr_array_len");
+			return builder->CreateCall(fn, { target });
+		} else {
+			auto target = builder->CreateLoad(gen_expr_target(args[0]));
+			auto fn = get_builtin("strlen");
+			return builder->CreateCall(fn, { target });
+		}
 	}
 
 	if (BUILTIN(expr, "append")) {

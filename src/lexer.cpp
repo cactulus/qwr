@@ -47,6 +47,7 @@ const std::unordered_map<std::string, TokenType> keyword_tokens = {
 	{"if", TOKEN_IF},
 	{"else", TOKEN_ELSE},
 	{"while", TOKEN_WHILE},
+	{"for", TOKEN_FOR},
 	{"new", TOKEN_NEW},
 	{"delete", TOKEN_DELETE},
 	{"enum", TOKEN_ENUM},
@@ -246,7 +247,7 @@ void read_int_or_float(Lexer *l, Token *t) {
 	const char *num;
 	auto num1_len = read_xchars(l, &num, is_digit);
 	
-	if (l->peek_char() == '.') {
+	if (l->peek_char() == '.' && l->peek_char(1) != '.') {
 		l->eat_char();
 
 		const char *num2;

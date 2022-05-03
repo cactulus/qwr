@@ -1,38 +1,12 @@
 use "io";
-use "time";
-
-print_arr :: (a []int) {
-	i := 0;
-	while i < len(a) {
-		print(a[i]);
-		i++;
-	}
-}
 
 main :: () int {
-	start := clock();
+	str := "Hello World!";
+	a := {2, 5, 1, 2} []int;
 
-	arr := {2, 4, 1} []int;
-	arr2 := {2.5, 4.1, 1.2} []float;
-
-	print_arr(arr);
-
-	append(arr, 4);
-	append(arr, 6);
-	append(arr, 7);
-	append(arr, 8);
-	append(arr, 9);
-
-	print("\n\n");
-	
-	print_arr(arr);
-	append(arr2, 9.5);
-
-	delete arr;
-	
-	end := clock();
-	diff := (end - start) as float / CLOCKS_PER_SEC;
-	printf("Elapsed time: %f seconds\n", diff);
+	for 0..len(str) {
+		print(str[it]);
+	}
 
 	return 0;
 }

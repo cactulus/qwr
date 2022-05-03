@@ -30,6 +30,7 @@ struct Scope {
 	Scope(Messenger *_messenger, Scope *_parent=NULL);
 
 	void add(Token *token, Variable *var);
+	void add_replace(Variable *var);
 	Variable *find(Token *token);
 	Variable *find_null(const char *name);
 };
@@ -116,6 +117,7 @@ enum StmtKind {
 	RETURN,
     IF,
     WHILE,
+	FOR,
     BLOCK,
     EXPR_STMT,
     DELETE,
@@ -166,6 +168,22 @@ struct Stmt {
             Expr *cond;
             Stmt *body;
         } while_;
+
+		struct {
+			Variable *var;
+			Stmt *body;
+
+			union {
+				Expr *iterator;
+				
+				struct {
+					Expr *range_from;
+					Expr *range_to;
+				};
+			};
+
+			bool is_range;
+		} for_;
 	};
 };
 
@@ -202,6 +220,7 @@ struct Parser {
     Stmt *parse_block();
     Stmt *parse_if();
     Stmt *parse_while();
+	Stmt *parse_for();
 
 	Stmt *parse_return();
 	Stmt *parse_delete();

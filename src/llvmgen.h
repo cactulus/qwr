@@ -25,6 +25,7 @@ struct CodeGenerator {
 	void gen_return(Stmt *stmt);
 	void gen_if(Stmt *stmt);
 	void gen_while(Stmt *stmt);
+	void gen_for(Stmt *stmt);
 	void gen_block(Stmt *stmt);
 	void gen_expr_stmt(Stmt *stmt);
 	void gen_delete(Stmt *stmt);
@@ -47,6 +48,9 @@ struct CodeGenerator {
 
 	llvm::Value *gen_expr_target(Expr *expr);
 
+	llvm::Value *gen_array_indexed(llvm::Value *arr, llvm::Type *arr_type, llvm::Value *index);
+	llvm::Value *gen_string_indexed(llvm::Value *str, llvm::Value *index);
+		
     llvm::Type *gen_return_type(std::vector<QType *> *types);
     llvm::Type *gen_return_type(std::vector<Expr *> *types);
 

@@ -72,7 +72,12 @@ void Typer::init(LLVMContext *_llvm_context, Messenger *_messenger) {
 	insert_builtin("float", make_type(TYPE_F32, (Type *)Type::getFloatTy(*llvm_context)));
 	insert_builtin("bool", make_type(TYPE_BOOL, (Type *) Type::getInt1Ty(*llvm_context)));
 	insert_builtin("char", make_type(TYPE_CHAR, (Type *) Type::getIntNTy(*llvm_context, 8)));
-	insert_builtin("string", make_type(TYPE_STRING, make_pointer(get("char"))->llvm_type));
+
+	auto char_ty = get("char");
+	auto char_ptr = make_pointer(char_ty);
+	QType *str_ty = make_type(TYPE_STRING, char_ptr->llvm_type);
+	str_ty->element_type = char_ty;
+	types.insert({ "string", str_ty});
 }
 
 void Typer::insert_builtin(const char *type_str, QType *type) {
@@ -150,14 +155,14 @@ bool Typer::can_convert_implicit(QType *from, QType *to) {
 	if (from->isfloat() && to->isfloat())
 		return true;
 
-    if (from->isint() && to->isint())
-        return true;
+	if (from->isint() && to->isint())
+		return true;
 
-    if (from->isint() && to->isbool())
-        return true;
+	if (from->isint() && to->isbool())
+		return true;
 
-    if (from->isbool() && to->isint())
-        return true;
+	if (from->isbool() && to->isint())
+		return true;
 
     return false;
 }

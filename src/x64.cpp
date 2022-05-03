@@ -4,15 +4,11 @@ Inspired by the Bitwise "Programming an x64 compiler from scratch" live streams
 #include <cassert>
 #include <iostream>
 #include <cstdint>
+#include <unordered_map>
 
 #include "options.h"
 #include "parser.h"
 #include "x64.h"
-
-#ifdef _WIN32
-namespace win {
-	#include <Windows.h>
-}
 
 #define MAX_CODE_LEN 1024
 
@@ -24,10 +20,10 @@ enum Reg {
 	RCX = 0x1,
 	RDX = 0x2,
 	RBX = 0x3,
-	RSI = 0x4,
-	RDI = 0x5,
-	RBP = 0x6,
-	RSP = 0x7,
+	RSP = 0x4,
+	RBP = 0x5,
+	RSI = 0x6,
+	RDI = 0x7,
 	R8 = 0x8,
 	R9 = 0x9,
 	R10 = 0x10,
@@ -58,10 +54,6 @@ enum Scale {
 	X8 = 0x3,
 };
 
-enum JumpCodes {
-
-};
-
 enum OperandType {
 	OPERAND_NULL,
 	OPERAND_FRAME_OFFSET,
@@ -74,18 +66,21 @@ struct Operand {
 	OperandType type;
 	union {
 		u8 reg;
-		uint32_t val;
-		uint32_t offset;
-		uint32_t address;
+		u32 val;
+		u32 offset;
+		u32 address;
 	};
 };
 
 static void gen_expr(Operand *operand, Expr *expr);
+static void emit_add(Operand *op1, Operand *op2);
+static void emit_sub(Operand *op1, Operand *op2);
 
 static u32 free_register_mask;
 static u8 code[MAX_CODE_LEN];
 static u8 *code_ptr;
 
+static std::unordered_map<std::string, u32> variable_offset_map = {};
 static u32 local_var_count = 0;
 
 void emit(u8 byte) {
@@ -148,6 +143,12 @@ void emit_rex2(u8 rx, u8 rm) {
 	emit(0x48 | (rm >> 3) | ((rx >> 3) << 2));
 }
 
+#define EMIT_OP(operation) \
+    emit_##operation##(); \
+
+#define EMIT_R(operation, reg) \
+    emit_##operation##(reg); \
+
 #define EMIT_R_R(operation, dest, source) \
     emit_rex2(dest, source); \
     emit_##operation##_r(); \
@@ -158,10 +159,76 @@ void emit_rex2(u8 rx, u8 rm) {
     emit_##operation##_r(); \
     emit_indirect(destination, source)
 
+#define EMIT_R_D(operation, destination, source) \
+    emit_rex2(dest, 0x0); \
+    emit_##operation##_r(); \
+    emit_displaced(dest, source)
+
+#define EMIT_D_R(operation, destination, source) \
+    emit_rex2(source, 0x0); \
+    emit_##operation##_m(); \
+    emit_displaced(source, dest)
+
+#define EMIT_D_I(operation, destination, source_immediate) \
+    emit_rex2(0x0, 0x0); \
+    emit_##operation##_i(); \
+    emit_displaced(extension_##operation##_I, destination); \
+    emit_word(source_immediate)
+
 #define EMIT_R_MD1(operation, dest, source, disp) \
     emit_rex2(dest, source); \
     emit_##operation##_r(); \
     emit_byte_displaced(dest, source, disp)
+
+#define EMIT_R_MD(operation, dest, source, disp) \
+    emit_rex2(dest, source); \
+    emit_##operation##_r(); \
+    emit_displaced(dest, source, disp)
+
+#define EMIT_R_SIB(operation, destination, source_base, source_scale, source_index) \
+    emit_rex(destination, source_base, source_index); \
+    emit_##operation##_r(); \
+    emit_indirect_indexed(destination, source_base, source_index, source_scale)
+
+#define EMIT_R_SIBD1(operation, destination, source_base, source_scale, source_index, displacement) \
+    emit_rex(destination, source_base, source_index); \
+    emit_##operation##_r(); \
+    emit_byte_displaced_indexed(destination, source_base, source_index, source_scale, displacement)
+
+#define EMIT_R_SIBD(operation, destination, source_base, source_scale, source_index, displacement) \
+    emit_rex(destination, source_base, source_index); \
+    emit_##operation##_r(); \
+    emit_displaced_indexed(destination, source_base, source_index, source_scale, displacement)
+
+#define EMIT_M_R(operation, destination, source) \
+    emit_rex2(source, destination); \
+    emit_##operation##_m(); \
+    emit_indirect(source, destination);
+
+#define EMIT_MD1_R(operation, destination, displacement, source) \
+    emit_rex2(source, destination); \
+    emit_##operation##_m(); \
+    emit_byte_displaced(source, destination, displacement);
+
+#define EMIT_MD_R(operation, destination, displacement, source) \
+    emit_rex2(source, destination); \
+    emit_##operation##_m(); \
+    emit_displaced(source, destination, displacement);
+
+#define EMIT_SIB_R(operation, destination_base, destination_scale, destination_index, source) \
+    emit_rex(source, destination_base, destination_index); \
+    emit_##opeartion##_m(); \
+    emit_indirect_indexed(source, destination_base, destination_index, destination_scale)
+
+#define EMIT_SIBD1_R(operation, destination_base, destination_scale, destination_index, destination_displacement, source) \
+    emit_rex(source, destination_base, destination_index); \
+    emit_##opeartion##_m(); \
+    emit_byte_displaced_indexed(source, destination_base, destination_index, destination_scale, destination_displacement)
+
+#define EMIT_SIBD_R(operation, destination_base, destination_scale, destination_index, destination_displacement, source) \
+    emit_rex(source, destination_base, destination_index); \
+    emit_##opeartion##_m(); \
+    emit_displaced_indexed(source, destination_base, destination_index, destination_scale, destination_displacement)
 
 #define EMIT_R_I(operation, destination, source_immediate) \
     emit_rex2(0x0, destination); \
@@ -181,15 +248,10 @@ void emit_rex2(u8 rx, u8 rm) {
     emit_indirect(extension_##operation##_i, destination); \
     emit_word(source_immediate)
 
-#define EMIT_MD1_R(operation, destination, displacement, source) \
-    emit_rex2(source, destination); \
-    emit_##operation##_m(); \
-    emit_byte_displaced(source, destination, displacement);
-
 #define EMIT_MD1_I(operation, destination, destination_displacement, source_immediate) \
     emit_rex2(0x0, destination); \
     emit_##operation##_i(); \
-	emit_byte_displaced(extension_##operation##_i, destination, destination_displacement); \
+    emit_byte_displaced(extension_##operation##_i, destination, destination_displacement); \
     emit_word(source_immediate)
 
 #define EMIT_MD_I(operation, destination, destination_displacement, source_immediate) \
@@ -197,6 +259,78 @@ void emit_rex2(u8 rx, u8 rm) {
     emit_##operation##_i(); \
     emit_displaced(extension_##operation##_i, destination, destination_displacement); \
     emit_word(source_immediate)
+
+#define EMIT_SIB_I(operation, destination_base, destination_scale, destination_index, source_immediate) \
+    emit_rex(0x0, destination_base, destination_index); \
+    emit_##operation##_i(); \
+    emit_indirect_indexed(extension_##operation##_i, destination_base, destination_index, destination_scale); \
+    emit_word(source_immediate)
+
+#define EMIT_SIBD1_I(operation, destination_base, destination_scale, destination_index, destination_displacement, source_immediate) \
+    emit_rex(0x0, destination_base, destination_index); \
+    emit_##operation##_i(); \
+    emit_byte_displaced_indexed(extension_##operation##_i, destination_base, destination_index, destination_scale, destination_displacement); \
+    emit_word(source_immediate)
+
+#define EMIT_SIBD_I(operation, destination_base, destination_scale, destination_index, destination_displacement, source_immediate) \
+    emit_rex(0x0, destination_base, destination_index); \
+    emit_##operation##_i(); \
+    emit_displaced_indexed(extension_##operation##_i, destination_base, destination_index, destination_scale, destination_displacement); \
+    emit_word(source_immediate)
+
+#define EMIT_X_R(operation, source) \
+    emit_rex2(0x0, source); \
+    emit_##operation##_x(); \
+    emit_direct(extension_##operation##_x, source)
+
+#define EMIT_X_M(operation, source) \
+    emit_rex2(0x0, source); \
+    emit_##operation##_x(); \
+    emit_indirect(extension_##operation##_x, source)
+
+#define EMIT_X_D(operation, source) \
+    emit_rex2(0x0, 0x0); \
+    emit_##operation##_x(); \
+    emit_displaced(extension_##opeartion##_x, source)
+
+#define EMIT_X_MD1(operation, source, disp) \
+    emit_rex2(0x0, source); \
+    emit_##operation##_x(); \
+    emit_byte_displaced(extension_##operation##_x, source, disp)
+
+#define EMIT_X_MD(operation, source, disp) \
+    emit_rex2(0x0, source); \
+    emit_##operation##_x(); \
+    emit_displaced(extension_##operation##_x, source, disp)
+
+#define EMIT_X_SIB(operation, source_base, source_scale, source_index) \
+    emit_rex(0x0, source_base, source_index); \
+    emit_##operation##_x(); \
+    emit_indirect_indexed(extension_##operation##_x, source_base, source_index, source_scale)
+
+#define EMIT_X_SIBD1(operation, source_base, source_scale, source_index, displacement) \
+    emit_rex(0x0, source_base, source_index); \
+    emit_##operation##_x(); \
+    emit_byte_displaced_indexed(extension_##operation##_x, source_base, source_index, source_scale, displacement)
+
+#define EMIT_X_SIBD(operation, source_base, source_scale, source_index, displacement) \
+    emit_rex(0x0, source_base, source_index); \
+    emit_##operation##_x(); \
+    emit_displaced_indexed(extension_##operation##_x, source_base, source_index, source_scale, displacement)
+
+#define EMIT_I(operation, source_immediate) \
+    emit_rex2(0x0, 0x0); \
+    emit_##operation##_i(); \
+    emit_word(source_immediate);
+
+#define EMIT_C_I(operation, condition_code, source_immediate) \
+    emit_##operation##_c_i(condition_code); \
+    emit_word(source_immediate);
+
+#define OP(operation, opcode) \
+    void emit_##operation##() { \
+        emit(opcode); \
+    }
 
 #define OP1R(operation, opcode) \
     void emit_##operation##_r() { \
@@ -227,38 +361,56 @@ void emit_rex2(u8 rx, u8 rm) {
     enum { extension_##operation##_x = extension };
 
 #define OP1CI(operation, opcode, extension) \
-    void emit_##operation##_c_i(u8 code) { \
+    void emit_##operation##_c_i(u32 code) { \
         emit(opcode + code); \
     } 
 
 #define OP2CI(operation, opcode) \
-    void emit_##operation##_c_i(u8 code) { \
+    void emit_##operation##_c_i(u32 code) { \
         emit(0x0F); \
         emit(opcode + code); \
     } 
 
-OP1M(MOV, 0x8B)
-OP1R(MOV, 0x89)
-OP1I(MOVSX, 0xC7, 0x00)
+#define OP1R1(operation, opcode) \
+    void emit_##operation##(u32 code) { \
+        emit(opcode + code); \
+    } 
 
-OP1R(ADD, 0x03)
-OP1M(ADD, 0x01)
-OP1I(ADD, 0x81, 0x00)
+OP1M(mov, 0x8B)
+OP1R(mov, 0x89)
+OP1I(movsx, 0xC7, 0x00)
 
-OP1R(SUB, 0x2B)
-OP1M(SUB, 0x29)
-OP1I(SUB, 0x81, 0x05)
+OP1R(add, 0x03)
+OP1M(add, 0x01)
+OP1I(add, 0x81, 0x00)
 
-OP1X(MUL, 0xF7, 0x04)
-OP1X(DIV, 0xF7, 0x06)
+OP1R(lea, 0x8D);
+OP1R(xor, 0x33)
 
-OP1I(CMP, 0x81, 0x07)
+OP(ret, 0xC3);
 
-OP1I(JMP, 0xE9, 0x00)
+OP1R1(push, 0x50)
+OP1R1(pop, 0x58)
+
+OP1R(sub, 0x2B)
+OP1M(sub, 0x29)
+OP1I(sub, 0x81, 0x05)
+
+OP1X(mul, 0xF7, 0x04)
+OP1X(div, 0xF7, 0x06)
+
+OP1I(cmp, 0x81, 0x07)
+OP1I(jmp, 0xE9, 0x00)
+OP1I(je, 0x84, 0x00)
+OP2CI(J, 0x80)
 
 u8 alloc_reg() {
-	win::DWORD free_register;
-	win::_BitScanForward(&free_register, free_register_mask);
+	u8 free_register = 0;
+
+	while (!(free_register_mask & (1 << free_register))) {
+		free_register++;
+	}
+
 	free_register_mask &= ~(1 << free_register);
 	return free_register;
 }
@@ -283,21 +435,21 @@ void operand_free_reg(Operand *op) {
 
 void move_operand_reg(Operand* op, u8 reg) {
 	if (op->type == OPERAND_IMMEDIATE) {
-		EMIT_R_I(MOVSX, reg, op->val);
+		EMIT_R_I(movsx, reg, op->val);
 	} else if (op->type == OPERAND_FRAME_OFFSET) {
-		EMIT_R_MD1(MOV, reg, RBP, op->offset);
+		EMIT_MD1_R(mov, RBP, -op->offset, reg);
 	} else if (op->type == OPERAND_ADDRESS) {
-		EMIT_R_M(MOV, reg, op->address);
+		EMIT_R_M(mov, reg, op->address);
 	} else if (op->type == OPERAND_REGISTER) {
 		if (op->reg != reg) {
-			EMIT_R_R(MOV, reg, op->reg);
+			EMIT_R_R(mov, reg, op->reg);
 		}
 	}
 	op->type = OPERAND_REGISTER;
 	op->reg = reg;
 }
 
-void EmitAsRegister(Operand* op) {
+void emit_as_register(Operand* op) {
 	if (op->type != OPERAND_REGISTER) {
 		u8 reg = alloc_reg();
 		move_operand_reg(op, reg);
@@ -314,22 +466,67 @@ void x64_init() {
 
 void x64_gen(Stmt *stmt) {
 	switch (stmt->kind) {
+	case BLOCK: {
+		for (auto s : *stmt->stmts) {
+			x64_gen(s);
+		}
+	} break;
 	case FUNCTION_DEFINITION:
+		EMIT_R(push, RBP);
+		EMIT_R_R(mov, RBP, RSP);
+
 		for (auto s : *stmt->func_def.body)
 			x64_gen(s);
 		break;
+	case RETURN: {
+		Operand operand;
+		gen_expr(&operand, (*stmt->return_values)[0]);
+
+		move_operand_reg(&operand, RAX);
+		operand_free_reg(&operand);
+
+		EMIT_R(pop, RBP);
+		EMIT_OP(ret);
+	} break;
 	case VARIABLE_DEFINITION: {
-		u32 off = local_var_count++ * 8;
+		u32 off = 0x8 + local_var_count++ * 8;
 		Operand operand;
 		gen_expr(&operand, stmt->var_def.value);
 		if (operand.type == OPERAND_IMMEDIATE) {
-			EMIT_MD1_I(MOVSX, RBP, off, operand.val);
+			EMIT_MD1_I(movsx, RBP, -off, operand.val);
 		} else {
-			EmitAsRegister(&operand);
-			EMIT_MD1_R(MOV, RBP, off, operand.reg);
+			emit_as_register(&operand);
+			EMIT_R_MD1(mov, operand.reg, RBP, -off);
 		}
 		operand_free_reg(&operand);
-		} break;
+
+		variable_offset_map.insert({ std::string(stmt->var_def.var->name), off });
+
+	} break;
+	case WHILE: {
+		uint8_t *while_statement = code_ptr;
+		Operand cond;
+		gen_expr(&cond, stmt->while_.cond);
+
+		u8 *after_addr = code_ptr + 2;
+
+		if (stmt->while_.cond->kind = BINARY) {
+			auto op = stmt->while_.cond->bin.op;
+		}
+
+		EMIT_C_I(J, 0x4, 0x0);
+		
+		x64_gen(stmt->while_.body);
+
+		EMIT_I(jmp, while_statement - code_ptr - 0x4);
+		*after_addr = code_ptr - after_addr - 0x4;
+	
+		operand_free_reg(&cond);
+	} break;
+	case EXPR_STMT: {
+		Operand operand;
+		gen_expr(&operand, stmt->target_expr);
+	} break;
 	default:
 		assert(0 && "Stmt not implemented yet");
 	}
@@ -337,12 +534,165 @@ void x64_gen(Stmt *stmt) {
 
 void gen_expr(Operand *operand, Expr *expr) {
 	switch (expr->kind) {
-	case INT_LIT:
-		operand->type = OPERAND_IMMEDIATE;
-		operand->val = expr->int_value;
-		break;
-	default:
-		assert(0 && "Expr not implemented yet");
+		case INT_LIT: {
+			operand->type = OPERAND_IMMEDIATE;
+			operand->val = expr->int_value;
+		} break;
+		case VARIABLE: {
+			operand->type = OPERAND_FRAME_OFFSET;
+			operand->offset = variable_offset_map[std::string(expr->var->name)];
+		} break;
+		case BINARY: {
+			Operand rhs;
+
+			gen_expr(operand, expr->bin.lhs);
+			gen_expr(&rhs, expr->bin.rhs);
+
+			if (expr->bin.op == '+') {
+				emit_add(operand, &rhs);
+			} else if (expr->bin.op == '-') {
+				emit_sub(operand, &rhs);
+			} else if (expr->bin.op == TOKEN_ADD_EQ) {
+				u32 off = operand->offset;
+
+				u32 reg = alloc_reg();
+				operand->type = OPERAND_REGISTER; 
+				operand->reg = reg;
+
+				EMIT_MD1_R(mov, RBP, -off, reg);
+				emit_add(operand, &rhs);
+				EMIT_R_MD1(mov, reg, RBP, -off);
+
+				free_reg(reg);
+			} else if (expr->bin.op == TOKEN_SUB_EQ) {
+				u32 off = operand->offset;
+
+				u32 reg = alloc_reg();
+				operand->type = OPERAND_REGISTER;
+				operand->reg = reg;
+
+				EMIT_MD1_R(mov, RBP, -off, reg);
+				emit_sub(operand, &rhs);
+				EMIT_R_MD1(mov, reg, RBP, -off);
+
+				free_reg(reg);
+			} else if (expr->bin.op == '=') {
+				auto off = operand->offset;
+
+				if (rhs.type == OPERAND_IMMEDIATE) {
+					EMIT_MD1_I(movsx, RBP, -off, rhs.val);
+				} else {
+					emit_as_register(&rhs);
+					EMIT_R_MD1(mov, rhs.reg, RBP, -off);
+				}
+			} else {
+				assert(0 && "Binary operation not implemented yet");
+			}
+		} break;
+		case COMPARE_ZERO: {
+			gen_expr(operand, expr->target);
+			if (operand->type == OPERAND_FRAME_OFFSET) {
+				EMIT_MD1_I(cmp, RBP, -operand->offset, 0x0);
+			} else {
+				emit_as_register(operand);
+				EMIT_R_I(cmp, operand->reg, 0x0);
+			}
+		} break;
+		case UNARY: {
+			switch (expr->unary.op) {
+				case '&': {
+					gen_expr(operand, expr->unary.target);
+
+					Operand result;
+					result.type = OPERAND_REGISTER;
+					result.reg = alloc_reg();
+
+					EMIT_R_MD1(lea, result.reg, RBP, -operand->offset);
+
+					operand_free_reg(operand);
+					operand->type = result.type;
+					operand->reg = result.reg;
+				} break;
+				case TOKEN_PLUS_PLUS: {
+					auto reg = alloc_reg();
+
+					gen_expr(operand, expr->unary.target);
+					auto off = operand->offset;
+					move_operand_reg(operand, reg);
+					EMIT_R_I(add, reg, 0x1);
+					EMIT_R_MD1(mov, reg, RBP, -off);
+
+					free_reg(reg);
+				} break;
+				case TOKEN_MINUS_MINUS: {
+					auto reg = alloc_reg();
+
+					gen_expr(operand, expr->unary.target);
+					auto off = operand->offset;
+					move_operand_reg(operand, reg);
+					EMIT_R_I(sub, reg, 0x1);
+					EMIT_R_MD1(mov, reg, RBP, -off);
+
+					free_reg(reg);
+				} break;
+				case '-': {
+					gen_expr(operand, expr->unary.target);
+
+					Operand reg_op;
+					operand_alloc_reg(&reg_op);
+
+					EMIT_R_R(xor, reg_op.reg, reg_op.reg);
+					emit_sub(&reg_op, operand);
+
+					operand->type = OPERAND_REGISTER;
+					operand->reg = reg_op.reg;
+				} break;
+			}
+		} break;
+		default:
+			assert(0 && "Expr not implemented yet");
+	}
+}
+
+void emit_add(Operand *op1, Operand *op2) {
+	if (op1->type == OPERAND_IMMEDIATE && op2->type == OPERAND_IMMEDIATE) {
+		op1->val += op2->val;
+	} else if (op1->type == OPERAND_IMMEDIATE) {
+		emit_as_register(op2);
+		EMIT_R_I(add, op2->reg, op1->val);
+		op1->type = OPERAND_REGISTER;
+		op1->reg = op2->reg;
+	} else {
+		emit_as_register(op1);
+		if (op2->type == OPERAND_IMMEDIATE) {
+			EMIT_R_I(add, op1->reg, op2->val);
+		} else if (op2->type == OPERAND_FRAME_OFFSET) {
+			EMIT_R_MD1(add, op1->reg, RBP, -op2->offset);
+		} else {
+			assert(op2->type == OPERAND_REGISTER);
+			EMIT_R_R(add, op1->reg, op2->reg);
+		}
+	}
+}
+
+void emit_sub(Operand *op1, Operand *op2) {
+	if (op1->type == OPERAND_IMMEDIATE && op2->type == OPERAND_IMMEDIATE) {
+		op1->val -= op2->val;
+	} else if (op1->type == OPERAND_IMMEDIATE) {
+		emit_as_register(op2);
+		EMIT_R_I(sub, op2->reg, op1->val);
+		op1->type = OPERAND_REGISTER;
+		op1->reg = op2->reg;
+	} else {
+		emit_as_register(op1);
+		if (op2->type == OPERAND_IMMEDIATE) {
+			EMIT_R_I(sub, op1->reg, op2->val);
+		} else if (op2->type == OPERAND_FRAME_OFFSET) {
+			EMIT_R_MD1(sub, op1->reg, RBP, -op2->offset);
+		} else {
+			assert(op2->type == OPERAND_REGISTER);
+			EMIT_R_R(sub, op1->reg, op2->reg);
+		}
 	}
 }
 
@@ -351,17 +701,3 @@ void x64_dump(Options *options) {
 	fwrite(code, 1, code_ptr - code, f);
 	fclose(f);
 }
-
-#else
-void x64_init() {
-	assert(0 && "x64 backend is only available on Windows!");
-}
-
-void x64_gen(Stmt *stmt) {
-	assert(0 && "x64 backend is only available on Windows!");
-}
-
-void x64_dump(Options *options) {
-	assert(0 && "x64 backend is only available on Windows!");
-}
-#endif
