@@ -1,8 +1,8 @@
-extern strcmp :: (s1 string, s2 string) s32;
-extern strlen :: (s string) u64;
-extern malloc :: (size u64) *u8;
-extern realloc :: (ptr *u8, size u64) *u8;
-extern free :: (ptr *u8);
+extern strcmp :: (s1 str, s2 str) s32;
+extern strlen :: (s str) u64;
+extern malloc :: (size u64) ptr;
+extern realloc :: (p ptr, size u64) ptr;
+extern free :: (p ptr);
 
 Array :: struct {
 	data *u8,

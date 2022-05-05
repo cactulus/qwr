@@ -49,6 +49,7 @@ enum TokenType {
 	TOKEN_ENUM,
 	TOKEN_STRUCT,
 	TOKEN_USE,
+	TOKEN_TYPEDEF,
 
 	TOKEN_QWR,
 };

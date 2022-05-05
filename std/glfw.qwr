@@ -92,13 +92,15 @@ GLFW_JOYSTICK_HAT_BUTTONS :@ 0x00050001;
 GLFW_COCOA_CHDIR_RESOURCES :@ 0x00051001;
 GLFW_COCOA_MENUBAR :@ 0x00051002;
 
+typedef GLFWwindow *u8;
+
 extern glfwInit :: () int;
 extern glfwWindowHint :: (hint int, value int);
-extern glfwCreateWindow :: (width int, height int, title string, monitor *u8, share *u8) *u8;
-extern glfwWindowShouldClose :: (window *u8) int;
-extern glfwSwapBuffers :: (window *u8);
-extern glfwMakeContextCurrent :: (window *u8);
+extern glfwCreateWindow :: (width int, height int, title str, monitor ptr, share ptr) GLFWwindow;
+extern glfwWindowShouldClose :: (window GLFWwindow) int;
+extern glfwSwapBuffers :: (window GLFWwindow);
+extern glfwMakeContextCurrent :: (window GLFWwindow);
 extern glfwPollEvents :: ();
-extern glfwShowWindow :: (window *u8);
+extern glfwShowWindow :: (window GLFWwindow);
 extern glfwSwapInterval :: (interval int);
 extern glfwTerminate :: ();

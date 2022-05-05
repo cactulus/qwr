@@ -54,6 +54,7 @@ const std::unordered_map<std::string, TokenType> keyword_tokens = {
 	{"struct", TOKEN_STRUCT},
 	{"use", TOKEN_USE},
 	{"qwr", TOKEN_QWR},
+	{"typedef", TOKEN_TYPEDEF},
 };
 
 const std::unordered_map<std::string, TokenType> two_char_tokens = {

@@ -77,7 +77,11 @@ void Typer::init(LLVMContext *_llvm_context, Messenger *_messenger) {
 	auto char_ptr = make_pointer(char_ty);
 	QType *str_ty = make_type(TYPE_STRING, char_ptr->llvm_type);
 	str_ty->element_type = char_ty;
-	types.insert({ "string", str_ty});
+	types.insert({ "str", str_ty});
+
+	auto u8_ty = get("u8");
+	auto u8ptr_ty = make_pointer(u8_ty);
+	types.insert({ "ptr", u8ptr_ty });
 }
 
 void Typer::insert_builtin(const char *type_str, QType *type) {

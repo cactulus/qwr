@@ -107,6 +107,19 @@ Stmt *Parser::parse_top_level_stmt() {
         return parse_top_level_stmt();
     }
 
+	if (eat_token_if(TOKEN_TYPEDEF)) {
+		auto tok = lexer.peek_token();
+		if (!eat_token_if(TOKEN_ATOM)) {
+			messenger->report(tok, "Expected identifier for type name");
+		}
+		auto ty = parse_type();
+		eat_token_if(';');
+
+		typer->insert_custom(tok, ty);
+
+		return parse_top_level_stmt();
+	}
+
     if (eat_token_if(TOKEN_QWR)) {
         auto tok = lexer.peek_token();
         if (!eat_token_if(TOKEN_STRING_LIT)) {
@@ -614,7 +627,7 @@ Expr *Parser::parse_binary(int prec) {
 			break;
 
 		lexer.eat_token();
-        auto rhs = parse_binary(prec + 1);
+        auto rhs = parse_binary(op_it->second + 1);
         auto lhs_type = lhs->type;
         auto rhs_type = rhs->type;
         auto eval_type = lhs_type;
@@ -898,7 +911,7 @@ Expr *Parser::parse_primary() {
     if (tok->type == TOKEN_STRING_LIT) {
 		lexer.eat_token();
 		
-		auto expr = make_expr(STRING_LIT, typer->get("string"));
+		auto expr = make_expr(STRING_LIT, typer->get("str"));
         expr->string_lit = tok->lexeme;
 
         return expr;

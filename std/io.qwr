@@ -1,14 +1,14 @@
-extern printf :: (fmt string, ..) s32;
+extern printf :: (fmt str, ..) s32;
 
 print :: (i s64) {
     printf("%d\n", i);
 }
 
-print :: (s string) {
+print :: (s str) {
     printf("%s\n", s);
 }
 
-print :: (p *u8) {
+print :: (p ptr) {
     printf("%p\n", p);
 }
 
