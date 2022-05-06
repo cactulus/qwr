@@ -55,61 +55,64 @@ void Typer::init(LLVMContext *_llvm_context, Messenger *_messenger) {
 	llvm_context = _llvm_context;
 	messenger = _messenger;
 
-	insert_builtin("void", make_type(TYPE_VOID, (Type *) Type::getVoidTy(*llvm_context)));
-	insert_builtin("s8", make_type(TYPE_INT8, (Type *) Type::getInt8Ty(*llvm_context)));
-	insert_builtin("s16", make_type(TYPE_INT16, (Type *) Type::getInt16Ty(*llvm_context)));
-	insert_builtin("s32", make_type(TYPE_INT32, (Type *) Type::getInt32Ty(*llvm_context)));
-	insert_builtin("s64", make_type(TYPE_INT64, (Type *) Type::getInt64Ty(*llvm_context)));
-	insert_builtin("u8", make_type(TYPE_UINT8, (Type *) Type::getIntNTy(*llvm_context, 8)));
-	insert_builtin("u16", make_type(TYPE_UINT16, (Type *) Type::getIntNTy(*llvm_context, 16)));
-	insert_builtin("u32", make_type(TYPE_UINT32, (Type *) Type::getIntNTy(*llvm_context, 32)));
-	insert_builtin("u64", make_type(TYPE_UINT64, (Type *) Type::getIntNTy(*llvm_context, 64)));
-	insert_builtin("f16", make_type(TYPE_F16, (Type *)Type::getHalfTy(*llvm_context)));
-	insert_builtin("f32", make_type(TYPE_F32, (Type *)Type::getFloatTy(*llvm_context)));
-	insert_builtin("f64", make_type(TYPE_F64, (Type *)Type::getDoubleTy(*llvm_context)));
-	insert_builtin("int", make_type(TYPE_INT32, (Type *)Type::getInt32Ty(*llvm_context)));
-	insert_builtin("uint", make_type(TYPE_UINT32, (Type *) Type::getIntNTy(*llvm_context, 32)));
-	insert_builtin("float", make_type(TYPE_F32, (Type *)Type::getFloatTy(*llvm_context)));
-	insert_builtin("bool", make_type(TYPE_BOOL, (Type *) Type::getInt1Ty(*llvm_context)));
-	insert_builtin("char", make_type(TYPE_CHAR, (Type *) Type::getIntNTy(*llvm_context, 8)));
+	make_type_intern("void", TYPE_VOID, (Type *) Type::getVoidTy(*llvm_context));
+	make_type_intern("i8", TYPE_INT8, (Type *) Type::getInt8Ty(*llvm_context));
+	make_type_intern("s16", TYPE_INT16, (Type *) Type::getInt16Ty(*llvm_context));
+	make_type_intern("s32", TYPE_INT32, (Type *) Type::getInt32Ty(*llvm_context));
+	make_type_intern("s64", TYPE_INT64, (Type *) Type::getInt64Ty(*llvm_context));
+	make_type_intern("u8", TYPE_UINT8, (Type *) Type::getIntNTy(*llvm_context, 8));
+	make_type_intern("u16", TYPE_UINT16, (Type *) Type::getIntNTy(*llvm_context, 16));
+	make_type_intern("u32", TYPE_UINT32, (Type *) Type::getIntNTy(*llvm_context, 32));
+	make_type_intern("u64", TYPE_UINT64, (Type *) Type::getIntNTy(*llvm_context, 64));
+	make_type_intern("f16", TYPE_F16, (Type *)Type::getHalfTy(*llvm_context));
+	make_type_intern("f32", TYPE_F32, (Type *)Type::getFloatTy(*llvm_context));
+	make_type_intern("f64", TYPE_F64, (Type *)Type::getDoubleTy(*llvm_context));
+	make_type_intern("int", TYPE_INT32, (Type *)Type::getInt32Ty(*llvm_context));
+	make_type_intern("uint", TYPE_UINT32, (Type *) Type::getIntNTy(*llvm_context, 32));
+	make_type_intern("float", TYPE_F32, (Type *)Type::getFloatTy(*llvm_context));
+	make_type_intern("bool", TYPE_BOOL, (Type *) Type::getInt1Ty(*llvm_context));
+	make_type_intern("char", TYPE_CHAR, (Type *) Type::getIntNTy(*llvm_context, 8));
 
 	auto char_ty = get("char");
 	auto char_ptr = make_pointer(char_ty);
-	QType *str_ty = make_type(TYPE_STRING, char_ptr->llvm_type);
+	QType *str_ty = make_type_intern("str", TYPE_STRING, char_ptr->llvm_type);
 	str_ty->element_type = char_ty;
-	types.insert({ "str", str_ty});
 
 	auto u8_ty = get("u8");
 	auto u8ptr_ty = make_pointer(u8_ty);
-	types.insert({ "ptr", u8ptr_ty });
-}
-
-void Typer::insert_builtin(const char *type_str, QType *type) {
-	types.insert({std::string(type_str), type});
-}
-
-void Typer::insert_custom(Token *token, QType *type) {
-    auto sname = std::string(token->lexeme);
-    if (types.find(sname) != types.end()) {
-        messenger->report(token, "Type with this name does already exist");
-    }
-	types.insert({sname, type});
+	auto ptr_ty = make_type_intern("ptr", TYPE_POINTER, u8ptr_ty->llvm_type);
+	ptr_ty->element_type = u8_ty;
 }
 
 QType *Typer::make_pointer(QType *type) {
-	QType *ptty = make_type(TYPE_POINTER, (Type *) PointerType::get(type->llvm_type, 0));
+	auto id = "*" + type->id;
+	if (has(id)) {
+		return get(id);
+	}
+
+	QType *ptty = make_type_intern(id, TYPE_POINTER, (Type *) PointerType::get(type->llvm_type, 0));
 	ptty->element_type = type;
 	return ptty;
 }
 
 QType *Typer::make_array(QType *type) {
-	QType *ptty = make_type(TYPE_ARRAY, make_pointer(get("Array"))->llvm_type);
+	auto id = "Array_" + type->id;
+	if (has(id)) {
+		return get(id);
+	}
+
+	QType *ptty = make_type_intern(id, TYPE_ARRAY, make_pointer(get("Array"))->llvm_type);
 	ptty->element_type = type;
 	ptty->data_type = make_pointer(type);
 	return ptty;
 }
 
 QType *Typer::make_struct(const char *name, struct_fields_type *fields) {
+	auto id = std::string(name);
+	if (has(id)) {
+		return get(id);
+	}
+
     std::vector<Type *> llvm_fields;
 
     for (auto field : *fields) {
@@ -119,18 +122,40 @@ QType *Typer::make_struct(const char *name, struct_fields_type *fields) {
     auto sty = StructType::create(*llvm_context, name);
     sty->setBody(llvm_fields);
     
-    auto ty = make_type(TYPE_STRUCT, sty);
+    auto ty = make_type_intern(id, TYPE_STRUCT, sty);
 	ty->struct_name = name;
     ty->fields = fields;
 
     return ty;
 }
 
-QType *Typer::make_type(QBaseType base, Type *llvm_type) {
+QType *Typer::make_type(Token *token, QBaseType base, Type *llvm_type) {
+	auto sname = std::string(token->lexeme);
+	if (types.find(sname) != types.end()) {
+		messenger->report(token, "Type with this name does already exist");
+	}
+
+	make_type_intern(token->lexeme, base, llvm_type);
+}
+
+QType *Typer::make_type_intern(const std::string &id, QBaseType base, llvm::Type *llvm_type) {
 	auto ty = new QType();
 	ty->base = base;
+	ty->id = id;
 	ty->llvm_type = llvm_type;
+
+	types.insert({ id, ty });
+
 	return ty;
+}
+
+void Typer::make_ref_type(Token *token, QType *ref) {
+	auto sname = std::string(token->lexeme);
+	if (types.find(sname) != types.end()) {
+		messenger->report(token, "Type with this name does already exist");
+	}
+
+	types.insert({ sname, ref });
 }
 
 QType *Typer::get(Token *type_token) {
@@ -143,13 +168,17 @@ QType *Typer::get(Token *type_token) {
 	return NULL;
 }
 
-QType *Typer::get(const char *type_str) {
-	return types[std::string(type_str)];
+QType *Typer::get(const std::string &id) {
+	return types[id];
 }
 
-bool Typer::has(const char *type_str) {
-	auto it = types.find(std::string(type_str));
-    return it != types.end();
+QType *Typer::get_array(QType *value_type) {
+	return get("Array_" + value_type->id);
+}
+
+bool Typer::has(const std::string &id) {
+	auto it = types.find(id);
+	return it != types.end();
 }
 
 bool Typer::can_convert_implicit(QType *from, QType *to) {

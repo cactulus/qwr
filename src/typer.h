@@ -1,6 +1,8 @@
 #ifndef TYPE_H_
 #define TYPE_H_
 
+#include <tuple>
+#include <string>
 #include <unordered_map>
 
 #include "lexer.h"
@@ -42,6 +44,7 @@ typedef std::vector<std::pair<const char *, QType *>> struct_fields_type;
 struct QType {
 	QBaseType base;
 	llvm::Type *llvm_type;
+	std::string id;
 
 	union {
 	    QType *element_type;
@@ -81,17 +84,18 @@ struct Typer {
 
 	void init(llvm::LLVMContext *_llvm_context, Messenger *_messenger);
 	
-	void insert_builtin(const char *type_str, QType *type);
-	void insert_custom(Token *token, QType *type);
 	QType *make_pointer(QType *type);
 	QType *make_array(QType *type);
 	QType *make_struct(const char *name, struct_fields_type *fields);
-	QType *make_type(QBaseType base, llvm::Type *llvm_type);
+	QType *make_type(Token *token, QBaseType base, llvm::Type *llvm_type);
+	QType *make_type_intern(const std::string &id, QBaseType base, llvm::Type *llvm_type);
+	void make_ref_type(Token *token, QType *ref);
 
 	QType *get(Token *type_token);
-	QType *get(const char *type_str);
+	QType *get(const std::string &id);
+	QType *get_array(QType *value_type);
 
-	bool has(const char *type_str);
+	bool has(const std::string &id);
 
 	bool can_convert_implicit(QType *from, QType *to);
 	bool can_convert_explicit(QType *from, QType *to);

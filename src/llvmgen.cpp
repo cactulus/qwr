@@ -60,8 +60,9 @@ static Type *s32_ty;
 static Type *u8_ty;
 static Type *u64_ty;
 
-void CodeGenerator::init(Typer *_typer) {
+void CodeGenerator::init(Typer *_typer, bool _debug) {
 	typer = _typer;
+	debug = _debug;
 
 	llvm_module = new Module("test.ll", llvm_context);
 	builder = new IRBuilder<>(llvm_context);
@@ -70,7 +71,20 @@ void CodeGenerator::init(Typer *_typer) {
 	init_types();
 }
 
+void CodeGenerator::init_debug(const char *src_file) {
+	dbg_builder = new DIBuilder(*llvm_module);
+	dbg_cu = dbg_builder->createCompileUnit(
+		dwarf::DW_LANG_C, dbg_builder->createFile(src_file, ""),
+		"QWR Compiler", 0, "", 0
+	);
+	dbg_file = dbg_builder->createFile(src_file, "");
+	dbg_scopes.push_back(dbg_file);
+}
+
 void CodeGenerator::gen_stmt(Stmt *stmt) {
+	if (debug)
+		emit_location_dbg(stmt);
+
 	auto it = stmt_gen_funs.find(stmt->kind);
 	gen_stmt_fun fn = it->second;
 	(*this.*fn)(stmt);
@@ -90,14 +104,40 @@ void CodeGenerator::gen_func_def(Stmt *stmt) {
 				stmt->func_def.mangled_name;
 
 	auto fn = Function::Create(fun_type, linkage, name, llvm_module);
-
     stmt->func_def.llvm_ref = fn;
 
 	if (stmt->func_def.flags & FUNCTION_EXTERN) {
 		return;
 	}
 
-    current_function = fn;
+	current_function = fn;
+
+	if (debug) {
+		std::vector<Metadata *> dbg_params;
+		dbg_params.push_back(convert_type_dbg((*stmt->func_def.return_types)[0]));
+		for (int i = 0; i < parameter_types.size(); i++) {
+			dbg_params.push_back(convert_type_dbg((*stmt->func_def.parameters)[i]->type));
+		}
+
+		auto dbg_fun_type = dbg_builder->createSubroutineType(
+			dbg_builder->getOrCreateTypeArray(dbg_params)
+		);
+
+		unsigned line_number = stmt->location.line;
+		unsigned scope_line = line_number;
+		auto subprogram = dbg_builder->createFunction(
+			dbg_scopes[0], name, "", dbg_file, line_number,
+			dbg_fun_type, scope_line,
+			DINode::FlagPrototyped,
+			DISubprogram::DISPFlags::SPFlagLocalToUnit | DISubprogram::DISPFlags::SPFlagDefinition);
+
+		fn->setSubprogram(subprogram);
+		dbg_scopes.push_back(subprogram);
+
+		builder->SetCurrentDebugLocation(
+			DebugLoc()
+		);
+	}
 
 	auto entry = BasicBlock::Create(llvm_context, "", fn);
 	builder->SetInsertPoint(entry);
@@ -108,6 +148,18 @@ void CodeGenerator::gen_func_def(Stmt *stmt) {
 		auto var = builder->CreateAlloca(par->type->llvm_type);
 		par->llvm_ref = var;
 		builder->CreateStore(&*arg_it, var);
+
+		if (debug) {
+			auto ln = stmt->location.line;
+			auto dbg_scope = dbg_scopes.back();
+			auto dbg_par = dbg_builder->createParameterVariable(
+				dbg_scope, par->name, i, dbg_file, ln, convert_type_dbg(par->type),
+				true);
+
+			dbg_builder->insertDeclare(var, dbg_par, dbg_builder->createExpression(),
+				DILocation::get(dbg_scope->getContext(), ln, 0, dbg_scope), builder->GetInsertBlock());
+		}
+
 		i++;
 	}
 
@@ -118,6 +170,10 @@ void CodeGenerator::gen_func_def(Stmt *stmt) {
     if (builder->GetInsertBlock()->getTerminator() == 0) {
         builder->CreateRetVoid();
     }
+
+	if (debug) {
+		dbg_scopes.pop_back();
+	}
 }
 
 void CodeGenerator::gen_var_def(Stmt *stmt) {
@@ -141,6 +197,15 @@ void CodeGenerator::gen_var_def(Stmt *stmt) {
 	        auto var = (*vars)[i];
 	        auto var_ptr = builder->CreateAlloca(var->type->llvm_type);
             auto var_val = builder->CreateExtractValue(val, i);
+
+			if (debug) {
+				auto ln = stmt->location.line;
+				auto dbg_scope = dbg_scopes.back();
+				auto dbg_var = dbg_builder->createAutoVariable(dbg_scope, var->name, dbg_file, ln, convert_type_dbg(var->type));
+
+				dbg_builder->insertDeclare(var_ptr, dbg_var, dbg_builder->createExpression(),
+					DILocation::get(dbg_scope->getContext(), ln, 0, dbg_scope), builder->GetInsertBlock());
+			}
 
             builder->CreateStore(var_val, var_ptr);
 
@@ -207,6 +272,15 @@ void CodeGenerator::gen_var_def(Stmt *stmt) {
 				builder->CreateStore(val, var_ptr);
 			}
         }
+
+		if (debug) {
+			auto ln = stmt->location.line;
+			auto dbg_scope = dbg_scopes.back();
+			auto dbg_var = dbg_builder->createAutoVariable(dbg_scope, var->name, dbg_file, ln, convert_type_dbg(var->type));
+
+			dbg_builder->insertDeclare(var_ptr, dbg_var, dbg_builder->createExpression(),
+				DILocation::get(dbg_scope->getContext(), ln, 0, dbg_scope), builder->GetInsertBlock());
+		}
 
 		stmt->var_def.var->llvm_ref = var_ptr;
 	} 
@@ -387,6 +461,9 @@ void CodeGenerator::gen_delete(Stmt *stmt) {
 }
 
 Value *CodeGenerator::gen_expr(Expr *expr) {
+	if (debug)
+		emit_location_dbg(expr);
+
 	auto it = expr_gen_funs.find(expr->kind);
 	gen_expr_fun fn = it->second;
 	return (*this.*fn)(expr);
@@ -798,6 +875,44 @@ Type *CodeGenerator::gen_return_type(std::vector<Expr *> *types) {
     return StructType::get(llvm_context, return_types);
 }
 
+void CodeGenerator::emit_location_dbg(Stmt *stmt) {
+	auto scope = dbg_scopes.back();
+	auto loc = stmt->location;
+	builder->SetCurrentDebugLocation(
+		DILocation::get(scope->getContext(), loc.line, loc.col_from, scope)
+	);
+}
+
+void CodeGenerator::emit_location_dbg(Expr *expr) {
+	auto scope = dbg_scopes.back();
+	auto loc = expr->location;
+	builder->SetCurrentDebugLocation(
+		DILocation::get(scope->getContext(), loc.line, loc.col_from, scope)
+	);
+}
+
+DIType *CodeGenerator::convert_type_dbg(QType *type) {
+	if (type->base == TYPE_VOID)
+		return dbg_builder->createNullPtrType();
+
+	int bit_size = llvm_module->getDataLayout().getTypeSizeInBits(type->llvm_type);
+
+	if (type->ispointer()) {
+		return dbg_builder->createPointerType(convert_type_dbg(type->element_type), bit_size, bit_size);
+	}
+
+	unsigned encoding = 0;
+	if (type->isfloat()) {
+		encoding = dwarf::DW_ATE_float;
+	} else if (type->ischar()) {
+		encoding = dwarf::DW_ATE_unsigned_char;
+	} else if (type->isuint()) {
+		encoding = dwarf::DW_ATE_unsigned;
+	} else if (type->is_int_in_llvm()) {
+		encoding = dwarf::DW_ATE_signed;
+	}
+	return dbg_builder->createBasicType(type->id, bit_size, encoding);
+}
 
 int CodeGenerator::llvm_size_of(Type *type) {
     int size = llvm_module->getDataLayout().getTypeSizeInBits(type);    
@@ -845,6 +960,10 @@ void CodeGenerator::init_types() {
 }
 
 void CodeGenerator::output(Options *options) {
+	if (debug) {
+		dbg_builder->finalize();
+	}
+
     if (options->flags & OPTIMIZE) {
         optimize();
     }

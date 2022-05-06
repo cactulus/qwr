@@ -4,6 +4,7 @@
 #include <llvm/IR/Module.h>
 #include <llvm/Target/TargetMachine.h>
 #include <llvm/IR/IRBuilder.h>
+#include <llvm/IR/DIBuilder.h>
 #include <llvm/IR/Value.h>
 #include <llvm/IR/Type.h>
 
@@ -16,8 +17,15 @@ struct CodeGenerator {
 	llvm::Module *llvm_module;
 	llvm::LLVMContext llvm_context;
 	llvm::IRBuilder<> *builder;
+	
+	llvm::DIBuilder *dbg_builder;
+	llvm::DICompileUnit *dbg_cu;
+	llvm::DIFile *dbg_file;
+	std::vector<llvm::DIScope *> dbg_scopes;
+	bool debug;
 
-	void init(Typer *_typer);
+	void init(Typer *_typer, bool _debug);
+	void init_debug(const char *src_file);
 
 	void gen_stmt(Stmt *stmt);
 	void gen_func_def(Stmt *stmt);
@@ -58,6 +66,10 @@ struct CodeGenerator {
 	llvm::Function *get_builtin(const char *name);
 	llvm::Function *gen_append_func(std::string name, QType *value_type);
 
+	void emit_location_dbg(Stmt *stmt);
+	void emit_location_dbg(Expr *expr);
+
+	llvm::DIType *convert_type_dbg(QType *type);
     int llvm_size_of(llvm::Type *type);
 
     void init_module();

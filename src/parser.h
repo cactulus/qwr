@@ -57,6 +57,7 @@ enum ExprKind {
 struct Expr {
 	ExprKind kind;
 	QType *type;
+	SourceLocation location;
 
 	union {
 		Expr *target;
@@ -133,6 +134,7 @@ const u8 FUNCTION_VARARG = 0x4;
 
 struct Stmt {
 	StmtKind kind;
+	SourceLocation location;
 
 	union {
         std::vector<Stmt *> *stmts;
@@ -259,8 +261,9 @@ struct Parser {
 
 	const char *mangle_func(Stmt *stmt);
 
-	Stmt *make_stmt(StmtKind kind);
-	Expr *make_expr(ExprKind kind, QType *type);
+	Stmt *make_stmt(StmtKind kind, Token *location_token);
+	Expr *make_expr(ExprKind kind, QType *type, Token *location_token);
+	Expr *make_expr(ExprKind kind, QType *type, SourceLocation location);
 	Variable *make_variable(const char *name, QType *type);
 	Variable *add_or_get_variable(Token *token, QType *type);
 

@@ -115,7 +115,7 @@ Stmt *Parser::parse_top_level_stmt() {
 		auto ty = parse_type();
 		eat_token_if(';');
 
-		typer->insert_custom(tok, ty);
+		typer->make_ref_type(tok, ty);
 
 		return parse_top_level_stmt();
 	}
@@ -175,9 +175,8 @@ void Parser::parse_enum(Token *name) {
 	if (!eat_token_if('{')) {
 		messenger->report(lexer.peek_token(), "Expected { after enum name");
 	}
-     
-    auto type = typer->make_type(TYPE_ENUM, 0);
-    typer->insert_custom(name, type);
+    
+	auto type = typer->make_type(name, TYPE_ENUM, 0);
     type->categories = new std::vector<const char *>();
 
     while (!eat_token_if('}')) {
@@ -213,14 +212,13 @@ void Parser::parse_struct(Token *name) {
         eat_token_if(',');
     }
 
-    auto type = typer->make_struct(name->lexeme, fields);
-    typer->insert_custom(name, type);
+    typer->make_struct(name->lexeme, fields);
 }
 
 Stmt *Parser::parse_func_def(Token *name, u8 flags) {
     scope_push();
 
-	auto stmt = make_stmt(FUNCTION_DEFINITION);
+	auto stmt = make_stmt(FUNCTION_DEFINITION, name);
 	stmt->func_def.flags = flags;
 	current_function = stmt;
 
@@ -257,7 +255,7 @@ Stmt *Parser::parse_func_def(Token *name, u8 flags) {
 }
 
 Stmt *Parser::parse_extern_func_def(Token *name) {
-    auto stmt = make_stmt(FUNCTION_DEFINITION);
+    auto stmt = make_stmt(FUNCTION_DEFINITION, name);
 	stmt->func_def.flags = FUNCTION_EXTERN;
 
     auto cname = name->lexeme;
@@ -319,7 +317,7 @@ void Parser::parse_function_parameters(Stmt *stmt, bool add_to_scope) {
 }
 
 Stmt *Parser::parse_variable_definition(Token *name_token, u8 flags) {
-	auto stmt = make_stmt(VARIABLE_DEFINITION);
+	auto stmt = make_stmt(VARIABLE_DEFINITION, name_token);
 
     parse_variable_definition_base(name_token, flags, stmt);
 
@@ -330,7 +328,7 @@ Stmt *Parser::parse_variable_definition_type(Token *name_token, u8 flags) {
     QType *type = parse_type();
 
     if (eat_token_if(';')) {
-        auto stmt = make_stmt(VARIABLE_DEFINITION);
+        auto stmt = make_stmt(VARIABLE_DEFINITION, name_token);
         stmt->var_def.var = make_variable(name_token->lexeme, type);
         stmt->var_def.var->is_const = flags & VAR_CONST;
         stmt->var_def.value = 0;
@@ -348,7 +346,7 @@ Stmt *Parser::parse_variable_definition_type(Token *name_token, u8 flags) {
 
     lexer.eat_token();
 
-    auto stmt = make_stmt(VARIABLE_DEFINITION);
+    auto stmt = make_stmt(VARIABLE_DEFINITION, name_token);
 
     auto val_type = parse_variable_definition_base(name_token, flags, stmt);
     if (!typer->compare(type, val_type)) {
@@ -395,7 +393,7 @@ Stmt *Parser::parse_multiple_variable_definition(Token *name_token) {
         messenger->report(lexer.peek_token(), "Expected '='");
     }
 
-    auto stmt = make_stmt(VARIABLE_DEFINITION); 
+    auto stmt = make_stmt(VARIABLE_DEFINITION, name_token); 
     stmt->var_def.flags |= VAR_MULTIPLE;
     stmt->var_def.vars = vars;
 
@@ -420,7 +418,7 @@ Stmt *Parser::parse_multiple_variable_definition(Token *name_token) {
 }
 
 Stmt *Parser::parse_block() {
-    auto stmt = make_stmt(BLOCK);
+    auto stmt = make_stmt(BLOCK, lexer.peek_token());
     stmt->stmts = new std::vector<Stmt *>();
 
     while (!eat_token_if('}')) {
@@ -431,7 +429,7 @@ Stmt *Parser::parse_block() {
 }
 
 Stmt *Parser::parse_if() {
-    auto stmt = make_stmt(IF);
+    auto stmt = make_stmt(IF, lexer.last_token());
 
     auto cond = parse_expr();
     if (!cond->type->isbool()) {
@@ -450,7 +448,7 @@ Stmt *Parser::parse_if() {
 }
 
 Stmt *Parser::parse_while() {
-    auto stmt = make_stmt(WHILE);
+    auto stmt = make_stmt(WHILE, lexer.last_token());
 
     auto cond = parse_expr();
     if (!cond->type->isbool()) {
@@ -464,7 +462,7 @@ Stmt *Parser::parse_while() {
 
 Stmt *Parser::parse_for() {
 	auto var_tok = lexer.peek_token();
-	auto stmt = make_stmt(FOR);
+	auto stmt = make_stmt(FOR, lexer.last_token());
 
 	Variable *var = 0;
 	QType *iterator_type = 0;
@@ -558,14 +556,14 @@ Stmt *Parser::parse_return() {
         }
     }
 
-	auto stmt = make_stmt(RETURN);
+	auto stmt = make_stmt(RETURN, tok);
 	stmt->return_values = return_values;
 
 	return stmt;
 }
 
 Stmt *Parser::parse_delete() {
-    auto stmt = make_stmt(DELETE);
+    auto stmt = make_stmt(DELETE, lexer.last_token());
     auto tok = lexer.peek_token();
     stmt->target_expr = parse_expr();
 
@@ -602,8 +600,8 @@ Stmt *Parser::try_parse_atom() {
         }
 	}
 
-    auto stmt = make_stmt(EXPR_STMT);
-    stmt->target_expr = parse_expr();
+    auto stmt = make_stmt(EXPR_STMT, atom);
+	stmt->target_expr = parse_expr();
     eat_semicolon();
 
     return stmt;
@@ -685,7 +683,7 @@ Expr *Parser::parse_binary(int prec) {
             }
         }
 
-        auto expr = make_expr(BINARY, eval_type);
+        auto expr = make_expr(BINARY, eval_type, tok);
         expr->bin.lhs = lhs;
         expr->bin.rhs = rhs;
         expr->bin.op = op_it->first;
@@ -722,7 +720,7 @@ Expr *Parser::parse_postfix() {
 			messenger->report(tok, "Can't use ++ or -- on non-integer expression");
 		}
 
-		auto expr = make_expr(UNARY, target->type);
+		auto expr = make_expr(UNARY, target->type, tok);
 		expr->unary.target = target;
 		expr->unary.op = tok->type;
 		expr->unary.ispost = true;
@@ -741,7 +739,7 @@ Expr *Parser::parse_postfix() {
 			messenger->report(tok, "Index has to be of integer type");
 		}
 
-		auto indexed = make_expr(INDEXED, target->type->element_type);
+		auto indexed = make_expr(INDEXED, target->type->element_type, tok);
 		indexed->indexed.index = index;
 		indexed->indexed.target = target;
 
@@ -797,7 +795,7 @@ Expr *Parser::parse_access() {
         }
     }
 
-    auto expr = make_expr(MEMBER, ty);
+    auto expr = make_expr(MEMBER, ty, lexer.last_token());
     expr->member.target = e;
     expr->member.indices = indices;
     expr->member.dereferences = dereferences;
@@ -817,7 +815,7 @@ Expr *Parser::parse_unary() {
 
         auto target_type = target->type;
 
-		auto expr = make_expr(UNARY, typer->make_pointer(target_type)); 
+		auto expr = make_expr(UNARY, typer->make_pointer(target_type), tok); 
         expr->unary.target = target;
         expr->unary.op = '&';
 
@@ -829,7 +827,7 @@ Expr *Parser::parse_unary() {
             messenger->report(tok, "Can't dereference non variable");
         }
 
-		auto expr = make_expr(DEREF, target->type->element_type);
+		auto expr = make_expr(DEREF, target->type->element_type, tok);
         expr->target = target;
 		
         return expr;
@@ -841,7 +839,7 @@ Expr *Parser::parse_unary() {
             target = make_compare_zero(target);
         }
 
-		auto expr = make_expr(UNARY, target->type);
+		auto expr = make_expr(UNARY, target->type, tok);
         expr->unary.target = target;
         expr->unary.op = '!';
 		
@@ -849,7 +847,7 @@ Expr *Parser::parse_unary() {
     } else if (eat_token_if('-')) {
         auto target = parse_primary();
 
-		auto expr = make_expr(UNARY, target->type);
+		auto expr = make_expr(UNARY, target->type, tok);
         expr->unary.target = target;
         expr->unary.op = '-';
 		
@@ -860,7 +858,7 @@ Expr *Parser::parse_unary() {
 			messenger->report(tok, "Can't use ++ or -- on non-integer expression");
 		}
 
-		auto expr = make_expr(UNARY, target->type);
+		auto expr = make_expr(UNARY, target->type, tok);
 		expr->unary.target = target;
 		expr->unary.op = tok->type;
 		expr->unary.ispost = false;
@@ -884,7 +882,7 @@ Expr *Parser::parse_primary() {
 	if (tok->type == TOKEN_INT_LIT) {
 		lexer.eat_token();
 		
-		auto expr = make_expr(INT_LIT, typer->get("s32"));
+		auto expr = make_expr(INT_LIT, typer->get("s32"), tok);
         expr->int_value = tok->int_value;
 
         return expr;
@@ -893,7 +891,7 @@ Expr *Parser::parse_primary() {
 	if (tok->type == TOKEN_FLOAT_LIT) {
 		lexer.eat_token();
 
-		auto expr = make_expr(FLOAT_LIT, typer->get("f32"));
+		auto expr = make_expr(FLOAT_LIT, typer->get("f32"), tok);
 		expr->float_value = tok->float_value;
 
 		return expr;
@@ -902,7 +900,7 @@ Expr *Parser::parse_primary() {
 	if (tok->type == TOKEN_CHAR_LIT) {
 		lexer.eat_token();
 		
-		auto expr = make_expr(INT_LIT, typer->get("char"));
+		auto expr = make_expr(INT_LIT, typer->get("char"), tok);
         expr->int_value = tok->char_value;
 
         return expr;
@@ -911,7 +909,7 @@ Expr *Parser::parse_primary() {
     if (tok->type == TOKEN_STRING_LIT) {
 		lexer.eat_token();
 		
-		auto expr = make_expr(STRING_LIT, typer->get("str"));
+		auto expr = make_expr(STRING_LIT, typer->get("str"), tok);
         expr->string_lit = tok->lexeme;
 
         return expr;
@@ -933,7 +931,7 @@ Expr *Parser::parse_primary() {
             auto unmangled_name = tok->lexeme;
 			if (is_builtin(unmangled_name)) {
 				auto return_type = get_builtin_return_type(unmangled_name);
-				auto expr = make_expr(BUILTIN_FUNCTION, return_type);
+				auto expr = make_expr(BUILTIN_FUNCTION, return_type, tok);
 				expr->builtin.name = unmangled_name;
 				expr->builtin.arguments = arguments;
 				check_builtin_func(tok, expr);
@@ -942,7 +940,7 @@ Expr *Parser::parse_primary() {
 				auto func_decl = get_func(tok, arguments);
 
 				auto return_types = func_decl->func_def.return_types;
-				auto expr = make_expr(FUNCTION_CALL, (*return_types)[0]);
+				auto expr = make_expr(FUNCTION_CALL, (*return_types)[0], tok);
 				expr->func_call.arguments = arguments;
 				expr->func_call.target_func_decl = func_decl;
 				return expr;
@@ -963,7 +961,7 @@ Expr *Parser::parse_primary() {
             auto categories = *ty->categories;
             for (int i = 0; i < categories.size(); ++i) {
                 if (strcmp(categories[i], category->lexeme) == 0) {
-                    auto expr = make_expr(INT_LIT, typer->get("s32"));
+                    auto expr = make_expr(INT_LIT, typer->get("s32"), tok);
                     expr->int_value = i;
                     return expr;
                 }
@@ -973,7 +971,7 @@ Expr *Parser::parse_primary() {
         }
 
 		auto var = scope->find(tok);
-		auto expr = make_expr(VARIABLE, var->type);
+		auto expr = make_expr(VARIABLE, var->type, tok);
 		expr->var = var;
 
 		return expr;
@@ -1019,32 +1017,32 @@ Expr *Parser::parse_primary() {
 			messenger->report(ty_tok, "Illegal type for compound literal.\nExpected struct or array type!");
 		}
 
-		auto expr = make_expr(COMPOUND_LIT, ty);
+		auto expr = make_expr(COMPOUND_LIT, ty, tok);
 		expr->init.values = values;
 		return expr;
 	}
 
 	if (eat_token_if(TOKEN_NEW)) {
 	    auto ty = parse_type();
-	    auto expr = make_expr(NEW, typer->make_pointer(ty));
+	    auto expr = make_expr(NEW, typer->make_pointer(ty), tok);
 	    expr->alloc_type = ty;
 	    return expr;
     }
 
 	if (eat_token_if(TOKEN_TRUE)) {
-	    auto expr = make_expr(INT_LIT, typer->get("bool"));
+	    auto expr = make_expr(INT_LIT, typer->get("bool"), tok);
 	    expr->int_value = 1;
 	    return expr;
     }
 
 	if (eat_token_if(TOKEN_FALSE)) {
-	    auto expr = make_expr(INT_LIT, typer->get("bool"));
+	    auto expr = make_expr(INT_LIT, typer->get("bool"), tok);
 	    expr->int_value = 0;
 	    return expr;
     }
 
 	if (eat_token_if(TOKEN_NIL)) {
-	    auto expr = make_expr(NIL, typer->make_pointer(typer->get("u8")));
+	    auto expr = make_expr(NIL, typer->make_pointer(typer->get("u8")), tok);
 	    return expr;
     }
 
@@ -1053,7 +1051,7 @@ Expr *Parser::parse_primary() {
 }
 
 Expr *Parser::cast(Expr *target, QType *to) {
-    auto expr = make_expr(CAST, to);
+    auto expr = make_expr(CAST, to, target->location);
     expr->cast.from = target->type;
     expr->cast.to = to;
     expr->cast.target = target;
@@ -1062,7 +1060,7 @@ Expr *Parser::cast(Expr *target, QType *to) {
 }
 
 Expr *Parser::make_compare_zero(Expr *expr) {
-    Expr *cmp_expr = make_expr(COMPARE_ZERO, typer->get("bool"));
+    Expr *cmp_expr = make_expr(COMPARE_ZERO, typer->get("bool"), expr->location);
     cmp_expr->target = expr;
     return cmp_expr;
 }
@@ -1075,14 +1073,14 @@ Expr *Parser::make_compare_strings(Expr *lhs, Expr *rhs, TokenType op) {
 
     auto fn = get_func("strcmp_s_s");
 
-    auto fn_call_expr = make_expr(FUNCTION_CALL, typer->get("s32"));
+    auto fn_call_expr = make_expr(FUNCTION_CALL, typer->get("s32"), lhs->location);
     fn_call_expr->func_call.arguments = arguments;
     fn_call_expr->func_call.target_func_decl = fn;
 
-    auto zero = make_expr(INT_LIT, typer->get("s32"));
+    auto zero = make_expr(INT_LIT, typer->get("s32"), lhs->location);
     zero->int_value = 0;
     
-    auto cmp_expr = make_expr(BINARY, typer->get("bool"));
+    auto cmp_expr = make_expr(BINARY, typer->get("bool"), lhs->location);
     cmp_expr->bin.lhs = fn_call_expr;
     cmp_expr->bin.rhs = zero;
     cmp_expr->bin.op = op;
@@ -1260,17 +1258,23 @@ Stmt *Parser::get_func(const char *name) {
     return functions[sname];
 }
 
-Stmt *Parser::make_stmt(StmtKind kind) {
+Stmt *Parser::make_stmt(StmtKind kind, Token *location_token) {
     auto stmt = create_stmt();
     stmt->kind = kind;
+	stmt->location = location_token->location;
     return stmt;
 }
 
-Expr *Parser::make_expr(ExprKind kind, QType *type) {
-    auto expr = create_expr();
-    expr->kind = kind;
-    expr->type = type;
-    return expr;
+Expr *Parser::make_expr(ExprKind kind, QType *type, Token *location_token) {
+	return make_expr(kind, type, location_token->location);
+}
+
+Expr *Parser::make_expr(ExprKind kind, QType *type, SourceLocation location) {
+	auto expr = create_expr();
+	expr->kind = kind;
+	expr->type = type;
+	expr->location = location;
+	return expr;
 }
 
 Variable *Parser::make_variable(const char *name, QType *type) {

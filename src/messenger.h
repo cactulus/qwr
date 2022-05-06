@@ -1,12 +1,15 @@
 #ifndef MESSENGER_H_
 #define MESSENGER_H_
 
+#include <unordered_map>
+
 #include "lexer.h"
 
 struct Messenger {
-	std::vector<std::string> code_lines;
+	std::unordered_map<std::string, std::vector<std::string>> file_contents;
+	std::string current_file;
 
-	void init(const char *code);
+	void open_file(const std::string &file, const char *code);
 
 	void error(Token *token);
 

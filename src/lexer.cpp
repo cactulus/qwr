@@ -185,12 +185,12 @@ Token *Lexer::read_token() {
 }
 
 void Lexer::set_token_start(Token *t) {
-	t->col_from = col;
-	t->line = line;
+	t->location.col_from = col;
+	t->location.line = line;
 }
 
 void Lexer::set_token_end(Token *t) {
-	t->col_to = col;
+	t->location.col_to = col;
 }
 
 char Lexer::peek_char(int ahead) {

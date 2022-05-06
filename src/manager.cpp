@@ -47,7 +47,7 @@ void manager_init(Options *_options) {
 		x64_init();
 	} else {
 		gen_func =  llvm_gen_stmt;
-		llvm_code_gen.init(&typer);
+		llvm_code_gen.init(&typer, options->flags & DEBUG);
 	}
 
 	arena_init();
@@ -60,9 +60,12 @@ void manager_run() {
     const char *code;
     auto code_len = read_entire_file(options->src_file, &code);
 
-    messenger.init(code);
-    parser.lexer.init(code, code_len);
+	if (!(options->flags & X64_BACKEND) && options->flags & DEBUG) {
+		llvm_code_gen.init_debug(options->src_file);
+	}
 
+    messenger.open_file(options->src_file, code);
+    parser.lexer.init(code, code_len);
 
 	if (!(options->flags & X64_BACKEND)) {
 		manager_add_library("qwr");
@@ -144,6 +147,7 @@ void manager_add_library(const char *lib_name) {
     const char *code;
     auto code_len = read_entire_file(full_lib_path, &code);
 
+	messenger.open_file(full_lib_path, code);
     parser.lexer.backup();
     parser.lexer.init(code, code_len);
 

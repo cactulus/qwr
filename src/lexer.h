@@ -54,13 +54,16 @@ enum TokenType {
 	TOKEN_QWR,
 };
 
-struct Token {
-	TokenType type;
-
+struct SourceLocation {
 	int col_from;
 	int col_to;
 
 	int line;
+};
+
+struct Token {
+	TokenType type;
+	SourceLocation location;
 
 	union {
 		const char *lexeme;
