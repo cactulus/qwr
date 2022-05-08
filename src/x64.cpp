@@ -10,6 +10,8 @@ Inspired by the Bitwise "Programming an x64 compiler from scratch" live streams
 #include "parser.h"
 #include "x64.h"
 
+#ifdef _WIN32
+
 #define MAX_CODE_LEN 1024
 
 typedef uint8_t u8;
@@ -701,3 +703,11 @@ void x64_dump(Options *options) {
 	fwrite(code, 1, code_ptr - code, f);
 	fclose(f);
 }
+
+#else
+
+void x64_init() {}
+void x64_gen(Stmt *stmt) {}
+void x64_dump(Options *options) {}
+
+#endif

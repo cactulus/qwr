@@ -9,7 +9,7 @@ OBJS := $(SRCS:%.cpp=%.o)
 DEPS := $(SRCS:%.cpp=%.d)
 
 LLVM_CONFIG:=llvm-config
-CXXFLAGS := -std=c++20 -O3
+CXXFLAGS := -std=c++20 -O3 $(shell $(LLVM_CONFIG) --cxxflags)
 
 CXX = clang++
 

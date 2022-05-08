@@ -927,7 +927,6 @@ void CodeGenerator::init_module() {
 	InitializeAllAsmPrinters();
 
     Triple triple(sys::getDefaultTargetTriple());
-	triple.setArch(Triple::x86_64);
 
     llvm_module->setTargetTriple(triple.getTriple());
 
@@ -968,7 +967,7 @@ void CodeGenerator::output(Options *options) {
         optimize();
     }
 
-#ifdef _WIN32
+#if defined _WIN32 || defined __MACH__
 	std::error_code std_error;
 	auto out = new ToolOutputFile(options->ll_file, std_error, sys::fs::OF_None);
 	if (!out) {
@@ -1005,7 +1004,7 @@ void CodeGenerator::output(Options *options) {
 void CodeGenerator::link(Options *options) {
     std::stringstream cmd;
 
-#ifdef _WIN32
+#if defined _WIN32 || defined __MACH__
 	cmd << "clang -o";
     cmd << options->exe_file << " ";
     cmd << options->ll_file << " ";

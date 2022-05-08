@@ -47,7 +47,6 @@ struct QType {
 	std::string id;
 
 	union {
-	    QType *element_type;
         std::vector<const char *> *categories;
 
 		struct {
