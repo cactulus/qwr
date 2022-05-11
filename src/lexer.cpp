@@ -53,6 +53,7 @@ const std::unordered_map<std::string, TokenType> keyword_tokens = {
 	{"enum", TOKEN_ENUM},
 	{"struct", TOKEN_STRUCT},
 	{"use", TOKEN_USE},
+	{"include", TOKEN_INCLUDE},
 	{"qwr", TOKEN_QWR},
 	{"typedef", TOKEN_TYPEDEF},
 };
@@ -73,6 +74,8 @@ const std::unordered_map<std::string, TokenType> two_char_tokens = {
 	{"||", TOKEN_BAR_BAR},
 	{"++", TOKEN_PLUS_PLUS},
 	{"--", TOKEN_MINUS_MINUS},
+	{"<<", TOKEN_SHL},
+	{">>", TOKEN_SHR},
 }; 
 
 void Lexer::init(const char *code, int code_len) {
@@ -417,6 +420,11 @@ bool ttype_is_binary(int type) {
         case '*':
         case '/':
         case '%':
+        case '&':
+        case '^':
+        case '|':
+        case TOKEN_SHR:
+        case TOKEN_SHL:
             return true;
         default:
             return false;

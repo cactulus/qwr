@@ -21,6 +21,9 @@ int main(int argc, char *argv[]) {
 		std::cout << "\t-l\tLinker flags\n";
 		std::cout << "\t-print-ir\tPrint LLVM IR\n";
 		std::cout << "\t-x64\tUse x64 backend\n";
+		std::cout << "\t-print-tokens\tPrint tokens\n";
+		std::cout << "\t-print-ast\tPrint AST\n";
+		std::cout << "\t-callgraph\tOutput callgraph\n";
         return 0;
     }
 
@@ -41,6 +44,10 @@ int main(int argc, char *argv[]) {
             options.flags |= COMPILE_ONLY;
 		} else if (strcmp(arg, "-x64") == 0) {
 			options.flags |= X64_BACKEND;
+		} else if (strcmp(arg, "-print-ast") == 0) {
+			options.flags |= PRINT_AST;
+		} else if (strcmp(arg, "-callgraph") == 0) {
+			options.flags |= CALL_GRAPH;
         } else if (strcmp(arg, "-l") == 0) {
             const char *lib = *argv++;
             argc--;
@@ -60,6 +67,7 @@ int main(int argc, char *argv[]) {
             options.ll_file = change_file_extension(options.src_file, ".ll");
             options.obj_file = change_file_extension(options.src_file, obj_ext);
             options.exe_file = change_file_extension(options.src_file, exe_ext);
+            options.cgraph_file = change_file_extension(options.src_file, ".callgraph.dot");
         }
     }
 

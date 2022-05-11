@@ -1,60 +1,59 @@
 #include <cassert>
+#include <cstdint>
 #include <iostream>
 
 #include "lexer.h"
 #include "parser.h"
 #include "alloc.h"
 
+#define ARENA_ALLOC
 #ifdef ARENA_ALLOC
-static std::vector<Token> token_arena;
-static size_t token_arena_index = 0;
 
-static std::vector<Stmt> stmt_arena;
-static size_t stmt_arena_index = 0;
-
-static std::vector<Expr> expr_arena;
-static size_t expr_arena_index = 0;
-
-static std::vector<Variable> variable_arena;
-static size_t variable_arena_index = 0;
-#endif
+static void *arena_block = 0;
+static size_t arena_pos = 0;
+static size_t arena_size = 256 * 4096;
 
 void arena_init() {
-#ifdef ARENA_ALLOC
-	token_arena.resize(1024 * 256);
-	token_arena_index = 0;
-
-	stmt_arena.resize(1024 * 128);
-	stmt_arena_index = 0;
-
-	expr_arena.resize(1024 * 128);
-	expr_arena_index = 0;
-
-	variable_arena.resize(1024 * 128);
-	variable_arena_index = 0;
-#endif
+    arena_block = malloc(arena_size);
+    arena_pos = 0;
 }
 
-#ifdef ARENA_ALLOC
+void *arena_alloc(size_t size) {
+    if (arena_pos + size > arena_size) {
+        std::cout << "Out of memory!\n";
+        std::exit(-1);
+    }
+
+	auto p = &(((char *) arena_block)[arena_pos]);
+    arena_pos += size;
+    return p; 
+}
+
+template <class T>
+T *arena_alloc() {
+    return (T *) arena_alloc(sizeof(T));
+}
+
 Token *create_token() {
-	assert(token_arena_index < token_arena.size());
-	return &token_arena[token_arena_index++];
+	return (Token *) arena_alloc(sizeof(Token));
 }
 
 Stmt *create_stmt() {
-	assert(stmt_arena_index < stmt_arena.size());
-	return &stmt_arena[stmt_arena_index++];
+	return (Stmt *) arena_alloc(sizeof(Stmt));
 }
 
 Expr *create_expr() {
-	assert(expr_arena_index < expr_arena.size());
-	return &expr_arena[expr_arena_index++];
+	return (Expr *) arena_alloc(sizeof(Expr));
 }
 
 Variable *create_variable() {
-	assert(variable_arena_index < variable_arena.size());
-	return &variable_arena[variable_arena_index++];
+	return (Variable *) arena_alloc(sizeof(Variable));
 }
+
+QType *create_type() {
+	return (QType *) arena_alloc(sizeof(QType));
+}
+
 #else
 Token *create_token() {
 	return new Token();
@@ -70,5 +69,9 @@ Expr *create_expr() {
 
 Variable *create_variable() {
 	return new Variable();
+}
+
+QType *create_type() {
+	return new QType();
 }
 #endif

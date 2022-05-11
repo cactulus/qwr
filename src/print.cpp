@@ -21,6 +21,7 @@ const std::unordered_map<TokenType, std::string> keyword_tokens_names = {
 	{TOKEN_ENUM, "enum"},
 	{TOKEN_STRUCT, "struct"},
 	{TOKEN_USE, "use"},
+	{TOKEN_INCLUDE, "include"},
 	{TOKEN_QWR, "qwr"},
 	{TOKEN_TYPEDEF, "typedef"},
 };
@@ -41,6 +42,8 @@ const std::unordered_map<TokenType, std::string> two_char_tokens_names = {
 	{TOKEN_BAR_BAR, "'||'"},
 	{TOKEN_PLUS_PLUS, "'++'"},
 	{TOKEN_MINUS_MINUS, "'--'"},
+	{TOKEN_SHL, "'<<'"},
+	{TOKEN_SHR, "'>>'"},
 };
 
 void Token::print() {

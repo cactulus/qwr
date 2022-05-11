@@ -11,6 +11,8 @@ const u8 OPTIMIZE = 0x2;
 const u8 DEBUG = 0x4;
 const u8 PRINT_LLVM = 0x8;
 const u8 X64_BACKEND = 0x10;
+const u8 PRINT_AST = 0x20;
+const u8 CALL_GRAPH = 0x40;
 
 struct Options {
     std::vector<const char *> linker_flags;
@@ -19,6 +21,7 @@ struct Options {
     const char *ll_file;
     const char *obj_file;
     const char *exe_file;
+    const char *cgraph_file;
     u8 flags;
 };
 

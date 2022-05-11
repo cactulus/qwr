@@ -17,17 +17,22 @@ const std::unordered_map<int, int> operator_precedence = {
 	{'=', 1},
     {TOKEN_BAR_BAR, 2},
     {TOKEN_AND_AND, 3},
-    {TOKEN_EQ_EQ, 4},
-    {TOKEN_NOT_EQ, 4},
-    {TOKEN_LT_EQ, 5},
-    {TOKEN_GT_EQ, 5},
-    {'<', 5},
-    {'>', 5},
-	{'+', 6},
-	{'-', 6},
-	{'*', 7},
-	{'/', 7},
-	{'%', 7},
+    {'|', 4},
+    {'^', 5},
+    {'&', 6},
+    {TOKEN_EQ_EQ, 7},
+    {TOKEN_NOT_EQ,7},
+    {TOKEN_LT_EQ, 8},
+    {TOKEN_GT_EQ, 8},
+    {'<', 8},
+    {'>', 8},
+    {TOKEN_SHL, 9},
+    {TOKEN_SHR, 9},
+	{'+', 10},
+	{'-', 10},
+	{'*', 11},
+	{'/', 11},
+	{'%', 11},
 };
 
 static Stmt *current_function;
@@ -177,17 +182,34 @@ void Parser::parse_enum(Token *name) {
 	}
     
 	auto type = typer->make_type(name, TYPE_ENUM, 0);
-    type->categories = new std::vector<const char *>();
+    type->categories =  (std::vector<const char *> *) arena_alloc(sizeof(std::vector<const char *>));
+    type->indices = (std::vector<unsigned int> *) arena_alloc(sizeof(std::vector<unsigned int>));
 
+    unsigned int index = 0;
     while (!eat_token_if('}')) {
         auto tok = lexer.peek_token();
         if (!eat_token_if(TOKEN_ATOM)) {
             messenger->report(tok, "Only identifiers allowed in enum definition");
         }
 
+        if (eat_token_if('=')) {
+            auto int_lit = lexer.peek_token();
+            if (!eat_token_if(TOKEN_INT_LIT)) {
+                messenger->report(int_lit, "Expected integer literal");
+            }
+            
+            unsigned int new_index = int_lit->int_value;
+            if (new_index < index) {
+                messenger->report(int_lit, "Enum values have to be ascending. Given integer is smaller than some enum value before.");
+            }
+            index = new_index;
+        }
+
         type->categories->push_back(tok->lexeme);
+        type->indices->push_back(index);
 
         eat_token_if(',');
+        index++;
     }
 }
 
@@ -196,7 +218,7 @@ void Parser::parse_struct(Token *name) {
 		messenger->report(lexer.peek_token(), "Expected { after struct name");
 	}
      
-    auto fields = new struct_fields_type();
+    auto fields = (struct_fields_type *) arena_alloc(sizeof(struct_fields_type));
 
     while (!eat_token_if('}')) {
         auto tok = lexer.peek_token();
@@ -229,7 +251,7 @@ Stmt *Parser::parse_func_def(Token *name, u8 flags) {
     auto mname = mangle_func(stmt);
     stmt->func_def.mangled_name = mname;
 
-    stmt->func_def.return_types = new std::vector<QType *>();
+    stmt->func_def.return_types = (std::vector<QType *> *) arena_alloc(sizeof(std::vector<QType *>));
 
     if (eat_token_if('{')) {
         stmt->func_def.return_types->push_back(typer->get("void"));
@@ -243,7 +265,7 @@ Stmt *Parser::parse_func_def(Token *name, u8 flags) {
         }
     }
 
-    stmt->func_def.body = new std::vector<Stmt *>();
+    stmt->func_def.body = (std::vector<Stmt *> *) arena_alloc(sizeof(std::vector<Stmt *>));
 
     while (!eat_token_if('}')) {
         stmt->func_def.body->push_back(parse_stmt());
@@ -265,7 +287,7 @@ Stmt *Parser::parse_extern_func_def(Token *name) {
 
     auto mname = mangle_func(stmt);
     stmt->func_def.mangled_name = mname;
-    stmt->func_def.return_types = new std::vector<QType *>();
+    stmt->func_def.return_types = (std::vector<QType *> *) arena_alloc(sizeof(std::vector<QType *>));
 
     if (eat_token_if(';')) {
         stmt->func_def.return_types->push_back(typer->get("void"));
@@ -285,7 +307,7 @@ void Parser::parse_function_parameters(Stmt *stmt, bool add_to_scope) {
 		messenger->report(lexer.peek_token(), "Expected ( after function name");
 	}
 
-    stmt->func_def.parameters = new std::vector<Variable *>();
+    stmt->func_def.parameters = (std::vector<Variable *> *) arena_alloc(sizeof(std::vector<Variable *>));
 
 	while (!eat_token_if(')')) {
 		auto tok = lexer.peek_token();
@@ -378,7 +400,7 @@ QType *Parser::parse_variable_definition_base(Token *name_token, u8 flags, Stmt 
 }
 
 Stmt *Parser::parse_multiple_variable_definition(Token *name_token) {
-    auto vars = new std::vector<Variable *>();
+    auto vars = (std::vector<Variable *> *) arena_alloc(sizeof(std::vector<Variable *>));
     std::vector<Token *> var_names;
 
     var_names.push_back(name_token);
@@ -419,7 +441,7 @@ Stmt *Parser::parse_multiple_variable_definition(Token *name_token) {
 
 Stmt *Parser::parse_block() {
     auto stmt = make_stmt(BLOCK, lexer.peek_token());
-    stmt->stmts = new std::vector<Stmt *>();
+    stmt->stmts = (std::vector<Stmt *> *) arena_alloc(sizeof(std::vector<Stmt *>));
 
     while (!eat_token_if('}')) {
         stmt->stmts->push_back(parse_stmt());
@@ -529,7 +551,7 @@ Stmt *Parser::parse_return() {
     if (eat_token_if(';')) {
         return_values = 0;
     } else {
-        return_values = new std::vector<Expr *>();
+        return_values = (std::vector<Expr *> *) arena_alloc(sizeof(std::vector<Expr *>));
 
         return_values->push_back(parse_expr());
 
@@ -669,6 +691,9 @@ Expr *Parser::parse_binary(int prec) {
             if (!(lhs_type->ispointer() && rhs_type->isint()) &&
 				(!lhs_type->isint() && !rhs_type->isint()) &&
 				(!lhs_type->isfloat() && !rhs_type->isfloat())) {
+				if (lhs_type->ispointer() && (tok_type != '+' && tok_type != '-')) {
+				    messenger->report(tok, "Illegal binary operator for pointer type!");
+                }
                 messenger->report(tok, "Illegal type for binary expression"); 
             }
         }
@@ -758,8 +783,8 @@ Expr *Parser::parse_access() {
 
     auto ty = e->type;
 
-    auto indices = new std::vector<int>();
-    auto dereferences = new std::vector<bool>();
+    auto indices = (std::vector<int> *) arena_alloc(sizeof(std::vector<int>));
+    auto dereferences = (std::vector<bool> *) arena_alloc(sizeof(std::vector<bool>));
 
     while (eat_token_if('.')) {
         bool dereference = false;
@@ -919,7 +944,7 @@ Expr *Parser::parse_primary() {
 		lexer.eat_token();
 
         if (eat_token_if('(')) {
-            auto arguments = new std::vector<Expr *>();
+            auto arguments = (std::vector<Expr *> *) arena_alloc(sizeof(std::vector<Expr *>));
 
             while (!eat_token_if(')')) {
                 auto arg = parse_expr();
@@ -962,7 +987,7 @@ Expr *Parser::parse_primary() {
             for (int i = 0; i < categories.size(); ++i) {
                 if (strcmp(categories[i], category->lexeme) == 0) {
                     auto expr = make_expr(INT_LIT, typer->get("s32"), tok);
-                    expr->int_value = i;
+                    expr->int_value = (*ty->indices)[i];
                     return expr;
                 }
             }
@@ -978,7 +1003,7 @@ Expr *Parser::parse_primary() {
 	}
 
 	if (eat_token_if('{')) {
-		auto values = new std::vector<Expr *>();
+		auto values = (std::vector<Expr *> *) arena_alloc(sizeof(std::vector<Expr *>));
 		while (!eat_token_if('}')) {
 			values->push_back(parse_expr());
 			eat_token_if(',');
@@ -1066,7 +1091,7 @@ Expr *Parser::make_compare_zero(Expr *expr) {
 }
 
 Expr *Parser::make_compare_strings(Expr *lhs, Expr *rhs, TokenType op) {
-    auto arguments = new std::vector<Expr *>();
+    auto arguments = (std::vector<Expr *> *) arena_alloc(sizeof(std::vector<Expr *>));
 
     arguments->push_back(lhs);
     arguments->push_back(rhs);

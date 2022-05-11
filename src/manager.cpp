@@ -38,6 +38,7 @@ static code_gen_func gen_func;
 void manager_init(Options *_options) {
     options = _options;
 
+	arena_init();
 	typer.init(&llvm_code_gen.llvm_context, &messenger);
 	init_builtins(&typer);
 	parser.init(&typer, &messenger);
@@ -47,10 +48,9 @@ void manager_init(Options *_options) {
 		x64_init();
 	} else {
 		gen_func =  llvm_gen_stmt;
-		llvm_code_gen.init(&typer, options->flags & DEBUG);
+		llvm_code_gen.init(&typer, options);
 	}
 
-	arena_init();
 	LIB_PATH = get_lib_path();
 }
 
@@ -120,6 +120,8 @@ void manager_run() {
 		end = TIMER_NOW;
 		diff = TIMER_DIFF(start, end);
 		link_time = diff;
+
+		llvm_code_gen.output_call_graph(options);
 	}
 
     auto total_end = std::chrono::steady_clock::now();
@@ -147,6 +149,7 @@ void manager_add_library(const char *lib_name) {
     const char *code;
     auto code_len = read_entire_file(full_lib_path, &code);
 
+    auto old_file = messenger.current_file;
 	messenger.open_file(full_lib_path, code);
     parser.lexer.backup();
     parser.lexer.init(code, code_len);
@@ -175,6 +178,7 @@ void manager_add_library(const char *lib_name) {
         gen_time += diff;
 	}
 
+    messenger.open_file(old_file, "");
     parser.has_reached_end = false;
 	parser.lexer.restore();
 }

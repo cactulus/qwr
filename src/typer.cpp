@@ -3,6 +3,7 @@
 #include <llvm/IR/Type.h>
 #include <llvm/IR/DerivedTypes.h>
 
+#include "alloc.h"
 #include "typer.h"
 
 using namespace llvm;
@@ -135,11 +136,11 @@ QType *Typer::make_type(Token *token, QBaseType base, Type *llvm_type) {
 		messenger->report(token, "Type with this name does already exist");
 	}
 
-	make_type_intern(token->lexeme, base, llvm_type);
+	return make_type_intern(token->lexeme, base, llvm_type);
 }
 
 QType *Typer::make_type_intern(const std::string &id, QBaseType base, llvm::Type *llvm_type) {
-	auto ty = new QType();
+	auto ty = create_type();
 	ty->base = base;
 	ty->id = id;
 	ty->llvm_type = llvm_type;

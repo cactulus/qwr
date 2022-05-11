@@ -1,6 +1,7 @@
 #ifndef GEN_H_
 #define GEN_H_
 
+#include <llvm/Analysis/CallGraph.h>
 #include <llvm/IR/Module.h>
 #include <llvm/Target/TargetMachine.h>
 #include <llvm/IR/IRBuilder.h>
@@ -24,7 +25,10 @@ struct CodeGenerator {
 	std::vector<llvm::DIScope *> dbg_scopes;
 	bool debug;
 
-	void init(Typer *_typer, bool _debug);
+	llvm::CallGraph *callgraph;
+	bool gen_callgraph;
+
+	void init(Typer *_typer, Options *_options);
 	void init_debug(const char *src_file);
 
 	void gen_stmt(Stmt *stmt);
@@ -78,6 +82,7 @@ struct CodeGenerator {
 	void link(Options *options);
 	void optimize();
 	void dump(Options *options);
+	void output_call_graph(Options *options);
 };
 
 #endif

@@ -47,7 +47,10 @@ struct QType {
 	std::string id;
 
 	union {
-        std::vector<const char *> *categories;
+		struct {
+        	std::vector<const char *> *categories;
+			std::vector<unsigned int> *indices;
+		};
 
 		struct {
 			QType *element_type;

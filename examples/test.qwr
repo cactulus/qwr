@@ -1,12 +1,13 @@
 use "io";
 
-main :: () int {
-	str := "Hello World!";
-	a := {2, 5, 1, 2} []int;
+sub :: (a int, b int) int, int {
+    return a - b, b - a;
+}
 
-	for 0..len(str) {
-		print(str[it]);
-	}
+main :: (argc int, argv *str) int {
+    a, b := sub(5, 2);
+    print(a);
+    print(b);
 
 	return 0;
 }

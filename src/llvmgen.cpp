@@ -60,12 +60,18 @@ static Type *s32_ty;
 static Type *u8_ty;
 static Type *u64_ty;
 
-void CodeGenerator::init(Typer *_typer, bool _debug) {
+void CodeGenerator::init(Typer *_typer, Options * _options) {
 	typer = _typer;
-	debug = _debug;
+	debug = _options->flags & DEBUG;
+	gen_callgraph = false;
 
 	llvm_module = new Module("test.ll", llvm_context);
 	builder = new IRBuilder<>(llvm_context);
+
+	if (_options->flags & CALL_GRAPH) {
+		gen_callgraph = true;
+		callgraph = new CallGraph(*llvm_module);
+	}
 
     init_module();
 	init_types();
@@ -481,25 +487,15 @@ Value *CodeGenerator::gen_binary(Expr *expr) {
     if (ty->isuint() || is_ptr) {
         switch (top) {
             case '+':
-            case TOKEN_ADD_EQ: 
-                op = Instruction::BinaryOps::Add;
-                break;
+            case TOKEN_ADD_EQ: op = Instruction::BinaryOps::Add; break;
             case '-':
-            case TOKEN_SUB_EQ:
-                op = Instruction::BinaryOps::Sub;
-                break;
+            case TOKEN_SUB_EQ: op = Instruction::BinaryOps::Sub; break;
             case '*':
-            case TOKEN_MUL_EQ:
-                op = Instruction::BinaryOps::Mul;
-                break;
+            case TOKEN_MUL_EQ: op = Instruction::BinaryOps::Mul; break;
             case '/':
-            case TOKEN_DIV_EQ:
-                op = Instruction::BinaryOps::UDiv;
-                break;
+            case TOKEN_DIV_EQ: op = Instruction::BinaryOps::UDiv; break;
             case '%':
-            case TOKEN_MOD_EQ:
-                op = Instruction::BinaryOps::URem;
-                break;
+            case TOKEN_MOD_EQ: op = Instruction::BinaryOps::URem; break;
             case TOKEN_EQ_EQ: cmpop = CmpInst::Predicate::ICMP_EQ; break;
             case TOKEN_NOT_EQ: cmpop = CmpInst::Predicate::ICMP_NE; break;
             case TOKEN_LT_EQ: cmpop = CmpInst::Predicate::ICMP_ULE; break;
@@ -510,25 +506,15 @@ Value *CodeGenerator::gen_binary(Expr *expr) {
     } else if (ty->is_int_in_llvm()) {
         switch (top) {
             case '+':
-            case TOKEN_ADD_EQ: 
-                op = Instruction::BinaryOps::Add;
-                break;
+            case TOKEN_ADD_EQ:  op = Instruction::BinaryOps::Add; break;
             case '-':
-            case TOKEN_SUB_EQ:
-                op = Instruction::BinaryOps::Sub;
-                break;
+            case TOKEN_SUB_EQ: op = Instruction::BinaryOps::Sub; break;
             case '*':
-            case TOKEN_MUL_EQ:
-                op = Instruction::BinaryOps::Mul;
-                break;
+            case TOKEN_MUL_EQ: op = Instruction::BinaryOps::Mul; break;
             case '/':
-            case TOKEN_DIV_EQ:
-                op = Instruction::BinaryOps::SDiv;
-                break;
+            case TOKEN_DIV_EQ: op = Instruction::BinaryOps::SDiv; break;
             case '%':
-            case TOKEN_MOD_EQ:
-                op = Instruction::BinaryOps::SRem;
-                break;
+            case TOKEN_MOD_EQ: op = Instruction::BinaryOps::SRem; break;
             case TOKEN_EQ_EQ: cmpop = CmpInst::Predicate::ICMP_EQ; break;
             case TOKEN_NOT_EQ: cmpop = CmpInst::Predicate::ICMP_NE; break;
             case TOKEN_LT_EQ: cmpop = CmpInst::Predicate::ICMP_SLE; break;
@@ -539,25 +525,15 @@ Value *CodeGenerator::gen_binary(Expr *expr) {
 	} else if (ty->isfloat()) {
 		switch (top) {
 		case '+':
-		case TOKEN_ADD_EQ:
-			op = Instruction::BinaryOps::FAdd;
-			break;
+		case TOKEN_ADD_EQ: op = Instruction::BinaryOps::FAdd; break;
 		case '-':
-		case TOKEN_SUB_EQ:
-			op = Instruction::BinaryOps::FSub;
-			break;
+		case TOKEN_SUB_EQ: op = Instruction::BinaryOps::FSub; break;
 		case '*':
-		case TOKEN_MUL_EQ:
-			op = Instruction::BinaryOps::FMul;
-			break;
+		case TOKEN_MUL_EQ: op = Instruction::BinaryOps::FMul; break;
 		case '/':
-		case TOKEN_DIV_EQ:
-			op = Instruction::BinaryOps::FDiv;
-			break;
+		case TOKEN_DIV_EQ: op = Instruction::BinaryOps::FDiv; break;
 		case '%':
-		case TOKEN_MOD_EQ:
-			op = Instruction::BinaryOps::FRem;
-			break;
+		case TOKEN_MOD_EQ: op = Instruction::BinaryOps::FRem; break;
 		case TOKEN_EQ_EQ: cmpop = CmpInst::Predicate::FCMP_UEQ; break;
 		case TOKEN_NOT_EQ: cmpop = CmpInst::Predicate::FCMP_UNE; break;
 		case TOKEN_LT_EQ: cmpop = CmpInst::Predicate::FCMP_ULE; break;
@@ -579,11 +555,29 @@ Value *CodeGenerator::gen_binary(Expr *expr) {
 	    if (is_ptr) {
 	        new_value = builder->CreateInBoundsGEP(expr->type->llvm_type, lhs, rhs);
         } else {
-			if (op == BinaryOperator::Add) {
-				new_value = builder->CreateNSWAdd(lhs, rhs);
-			} else {
-				new_value = builder->CreateBinOp(op, lhs, rhs);
-			}
+            switch (top) {
+                case '|':
+                    new_value = builder->CreateOr(lhs, rhs);
+                    break;
+                case '&':
+                    new_value = builder->CreateAnd(lhs, rhs);
+                    break;
+                case '^':
+                    new_value = builder->CreateXor(lhs, rhs);
+                    break;
+                case TOKEN_SHR:
+                    new_value = builder->CreateLShr(lhs, rhs);
+                    break;
+                case TOKEN_SHL:
+                    new_value = builder->CreateShl(lhs, rhs);
+                    break;
+                default:
+                    if (op == BinaryOperator::Add) {
+                        new_value = builder->CreateNSWAdd(lhs, rhs);
+                    }
+                    new_value = builder->CreateBinOp(op, lhs, rhs);
+                    break;
+            }
         }
         if (top >= TOKEN_ADD_EQ && top <= TOKEN_MOD_EQ) {
 	        auto target = gen_expr_target(expr->bin.lhs);
@@ -745,7 +739,15 @@ Value *CodeGenerator::gen_func_call(Expr *expr) {
     for (auto arg : *expr->func_call.arguments)
         arg_values.push_back(gen_expr(arg));
 
-    return builder->CreateCall(target_fn, arg_values);
+	CallInst *call_inst = builder->CreateCall(target_fn, arg_values);
+
+	if (gen_callgraph) {
+		auto cg_node = callgraph->getOrInsertFunction(current_function);
+		auto target_node = callgraph->getOrInsertFunction(target_fn);
+		cg_node->addCalledFunction(call_inst, target_node);
+	}
+
+    return call_inst;
 }
 
 Value *CodeGenerator::gen_compare_zero(Expr *expr) {
@@ -1061,5 +1063,22 @@ void CodeGenerator::dump(Options *options) {
 
     raw_pwrite_stream *os = &out->os();
     llvm_module->print(*os, nullptr);
+    out->keep();
+}
+
+void CodeGenerator::output_call_graph(Options *options) {
+	if (!gen_callgraph)
+		return;
+
+    std::error_code std_error;
+    auto out = new ToolOutputFile(options->cgraph_file, std_error, sys::fs::OF_None);
+	    if (!out) {
+        std::cerr << "Could not open file " << options->cgraph_file << "\n";
+        return;
+    }
+
+    raw_pwrite_stream *os = &out->os();
+	callgraph->populateCallGraphNode(callgraph->getOrInsertFunction(current_function));
+    callgraph->print(*os);
     out->keep();
 }
