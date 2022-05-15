@@ -467,7 +467,6 @@ Stmt *Parser::parse_multiple_variable_definition(Token *name_token) {
 
     auto stmt = new VariableDefinition(name_token); 
     stmt->flags |= VAR_MULTIPLE;
-    stmt->vars = vars;
 
     auto expr_tok = lexer.peek_token();
     auto val = parse_function_call();
@@ -484,6 +483,7 @@ Stmt *Parser::parse_multiple_variable_definition(Token *name_token) {
     eat_token_if(';');
 
     stmt->value = val;
+    stmt->vars = vars;
     return stmt;
 }
 

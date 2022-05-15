@@ -388,7 +388,7 @@ void CodeGenerator::gen_for(For *stmt) {
 		} else {
 			f = get_builtin("strlen");
 		}
-		to = builder->CreateCall(f, builder->CreateLoad(iterator_val));
+		to = builder->CreateCall(f, iterator_val);
 	}
 
 	auto cond_block = BasicBlock::Create(llvm_context, "", current_function);
@@ -411,8 +411,8 @@ void CodeGenerator::gen_for(For *stmt) {
 
 	builder->SetInsertPoint(body_block);
 
-	loaded_index = builder->CreateLoad(inc_var);
 	if (!stmt->is_range) {
+	    loaded_index = builder->CreateLoad(inc_var);
 		auto it_ty = stmt->iterator->type;
 		if (it_ty->isarray()) {
 			auto data_type = stmt->iterator->type->data_type->llvm_type;
@@ -814,7 +814,7 @@ Value *CodeGenerator::gen_expr_target(Expr *expr) {
 		auto index = ind_expr->index;
 		auto target_ty = ind_expr->target->type;
 		if (target_ty->isarray()) {
-			return gen_array_indexed(gen_expr_target(ind_expr->target), target_ty->data_type->llvm_type, gen(index));
+			return gen_array_indexed(gen(ind_expr->target), target_ty->data_type->llvm_type, gen(index));
 		} else if (target_ty->isstring()) {
 			return gen_string_indexed(gen_expr_target(ind_expr->target), gen(index));
 		} else {
@@ -855,8 +855,7 @@ Value *CodeGenerator::gen_expr_target(Expr *expr) {
 Value *CodeGenerator::gen_array_indexed(Value *arr, Type *arr_ty, Value *index) {
 	auto data_fn = get_builtin("qwr_array_data");
 
-	auto var_ptr = builder->CreateLoad(arr);
-	Value *target = builder->CreateCall(data_fn, { var_ptr });
+	Value *target = builder->CreateCall(data_fn, { arr });
 	target = builder->CreatePointerCast(target, arr_ty);
 
 	return builder->CreateInBoundsGEP(target, { index });
