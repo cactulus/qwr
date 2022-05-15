@@ -31,42 +31,42 @@ struct CodeGenerator {
 	void init(Typer *_typer, Options *_options);
 	void init_debug(const char *src_file);
 
-	void gen_stmt(Stmt *stmt);
-	void gen_func_def(Stmt *stmt);
-	void gen_var_def(Stmt *stmt);
-	void gen_return(Stmt *stmt);
-	void gen_if(Stmt *stmt);
-	void gen_while(Stmt *stmt);
-	void gen_for(Stmt *stmt);
-	void gen_block(Stmt *stmt);
-	void gen_expr_stmt(Stmt *stmt);
-	void gen_delete(Stmt *stmt);
+    void gen(Stmt *stmt);
+	void gen_func_def(FunctionDefinition *stmt);
+	void gen_var_def(VariableDefinition *stmt);
+	void gen_return(Return *stmt);
+	void gen_if(If *stmt);
+	void gen_while(While *stmt);
+	void gen_for(For *stmt);
+	void gen_compound(CompoundStmt *stmt);
+	void gen_expr_stmt(ExprStmt *stmt);
+	void gen_delete(Delete *stmt);
 
-	llvm::Value *gen_expr(Expr *expr);
-	llvm::Value *gen_binary(Expr *expr);
-	llvm::Value *gen_cast(Expr *expr);
-	llvm::Value *gen_unary(Expr *expr);
-	llvm::Value *gen_deref(Expr *expr);
-	llvm::Value *gen_variable(Expr *expr);
-	llvm::Value *gen_int_lit(Expr *expr);
-	llvm::Value *gen_float_lit(Expr *expr);
-	llvm::Value *gen_string_lit(Expr *expr);
-	llvm::Value *gen_func_call(Expr *expr);
-	llvm::Value *gen_compare_zero(Expr *expr);
-	llvm::Value *gen_nil(Expr *expr);
-	llvm::Value *gen_new(Expr *expr);
-	llvm::Value *gen_member(Expr *expr);
-	llvm::Value *gen_indexed(Expr *expr);
+    llvm::Value *gen(Expr *stmt);
+	llvm::Value *gen_binary(Binary *expr);
+	llvm::Value *gen_unary(Unary *expr);
+	llvm::Value *gen_deref(Deref *expr);
+	llvm::Value *gen_variable(Variable *expr);
+	llvm::Value *gen_int_lit(IntegerLiteral *expr);
+	llvm::Value *gen_float_lit(FloatLiteral *expr);
+	llvm::Value *gen_string_lit(QStringLiteral *expr);
+	llvm::Value *gen_func_call(FunctionCall *expr);
+	llvm::Value *gen_compare_zero(CompareZero *expr);
+	llvm::Value *gen_nil(Nil *expr);
+	llvm::Value *gen_cast(Cast *expr);
+	llvm::Value *gen_new(New *expr);
+	llvm::Value *gen_member(Member *expr);
+    llvm::Value *gen_indexed(Indexed *expr);
+	llvm::Value *gen_builtin(Builtin *expr);
 
 	llvm::Value *gen_expr_target(Expr *expr);
 
 	llvm::Value *gen_array_indexed(llvm::Value *arr, llvm::Type *arr_type, llvm::Value *index);
 	llvm::Value *gen_string_indexed(llvm::Value *str, llvm::Value *index);
 		
-    llvm::Type *gen_return_type(std::vector<QType *> *types);
-    llvm::Type *gen_return_type(std::vector<Expr *> *types);
+    llvm::Type *gen_return_type(std::vector<QType *> types);
+    llvm::Type *gen_return_type(std::vector<Expr *> types);
 
-	llvm::Value *gen_builtin(Expr *expr);
 	llvm::Function *get_builtin(const char *name);
 	llvm::Function *gen_append_func(std::string name, QType *value_type);
 

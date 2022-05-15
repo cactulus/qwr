@@ -6,7 +6,6 @@
 
 #include "parser.h"
 #include "builtin.h"
-#include "alloc.h"
 #include "manager.h"
 
 static void init_preproc_definitions();
@@ -40,7 +39,7 @@ const std::unordered_map<int, int> operator_precedence = {
 
 static std::vector<std::string> preproc_definitions = {};
 
-static Stmt *current_function;
+static FunctionDefinition *current_function;
 
 void Parser::init(Typer *_typer, Messenger *_messenger) {
 	typer = _typer;
@@ -238,8 +237,8 @@ void Parser::parse_enum(Token *name) {
 	}
     
 	auto type = typer->make_type(name, TYPE_ENUM, 0);
-    type->categories =  (std::vector<const char *> *) arena_alloc(sizeof(std::vector<const char *>));
-    type->indices = (std::vector<unsigned int> *) arena_alloc(sizeof(std::vector<unsigned int>));
+    type->categories = new std::vector<const char *>();
+    type->indices = new std::vector<unsigned int>();
 
     unsigned int index = 0;
     while (!eat_token_if('}')) {
@@ -274,14 +273,13 @@ void Parser::parse_struct(Token *name) {
 		messenger->report(lexer.peek_token(), "Expected { after struct name");
 	}
      
-    auto fields = (struct_fields_type *) arena_alloc(sizeof(struct_fields_type));
+    auto fields = new struct_fields_type();
 
     while (!eat_token_if('}')) {
         auto tok = lexer.peek_token();
         if (!eat_token_if(TOKEN_ATOM)) {
             messenger->report(tok, "Expected identifier");
         }
-
 
         auto fty = parse_type();
 
@@ -296,35 +294,31 @@ void Parser::parse_struct(Token *name) {
 Stmt *Parser::parse_func_def(Token *name, u8 flags) {
     scope_push();
 
-	auto stmt = make_stmt(FUNCTION_DEFINITION, name);
-	stmt->func_def.flags = flags;
+	auto stmt = new FunctionDefinition(name);
+	stmt->flags = flags;
 	current_function = stmt;
 
     auto cname = name->lexeme;
-    stmt->func_def.unmangled_name = cname;
+    stmt->unmangled_name = cname;
 
     parse_function_parameters(stmt, true);
     auto mname = mangle_func(stmt);
-    stmt->func_def.mangled_name = mname;
-
-    stmt->func_def.return_types = (std::vector<QType *> *) arena_alloc(sizeof(std::vector<QType *>));
+    stmt->mangled_name = mname;
 
     if (eat_token_if('{')) {
-        stmt->func_def.return_types->push_back(typer->get("void"));
+        stmt->return_types.push_back(typer->get("void"));
     } else {
         auto return_type = parse_type();
-        stmt->func_def.return_types->push_back(return_type);
+        stmt->return_types.push_back(return_type);
 
         while (!eat_token_if('{')) {
             eat_token_if(',');
-            stmt->func_def.return_types->push_back(parse_type());
+            stmt->return_types.push_back(parse_type());
         }
     }
 
-    stmt->func_def.body = (std::vector<Stmt *> *) arena_alloc(sizeof(std::vector<Stmt *>));
-
     while (!eat_token_if('}')) {
-        stmt->func_def.body->push_back(parse_stmt());
+        stmt->body.push_back(parse_stmt());
     }
     scope_pop();
 
@@ -333,23 +327,22 @@ Stmt *Parser::parse_func_def(Token *name, u8 flags) {
 }
 
 Stmt *Parser::parse_extern_func_def(Token *name) {
-    auto stmt = make_stmt(FUNCTION_DEFINITION, name);
-	stmt->func_def.flags = FUNCTION_EXTERN;
+    auto stmt = new FunctionDefinition(name);
+	stmt->flags = FUNCTION_EXTERN;
 
     auto cname = name->lexeme;
-    stmt->func_def.unmangled_name = cname;
+    stmt->unmangled_name = cname;
 
     parse_function_parameters(stmt, false);
 
     auto mname = mangle_func(stmt);
-    stmt->func_def.mangled_name = mname;
-    stmt->func_def.return_types = (std::vector<QType *> *) arena_alloc(sizeof(std::vector<QType *>));
+    stmt->mangled_name = mname;
 
     if (eat_token_if(';')) {
-        stmt->func_def.return_types->push_back(typer->get("void"));
+        stmt->return_types.push_back(typer->get("void"));
     } else {
         auto return_type = parse_type();
-        stmt->func_def.return_types->push_back(return_type);
+        stmt->return_types.push_back(return_type);
 
         eat_token_if(';');
     }
@@ -358,12 +351,10 @@ Stmt *Parser::parse_extern_func_def(Token *name) {
     return stmt;
 }
 
-void Parser::parse_function_parameters(Stmt *stmt, bool add_to_scope) {
+void Parser::parse_function_parameters(FunctionDefinition *stmt, bool add_to_scope) {
 	if (!eat_token_if('(')) {
 		messenger->report(lexer.peek_token(), "Expected ( after function name");
 	}
-
-    stmt->func_def.parameters = (std::vector<Variable *> *) arena_alloc(sizeof(std::vector<Variable *>));
 
 	while (!eat_token_if(')')) {
 		auto tok = lexer.peek_token();
@@ -375,8 +366,9 @@ void Parser::parse_function_parameters(Stmt *stmt, bool add_to_scope) {
 		auto pname = tok->lexeme;
 
 		auto ptype = parse_type();
-		auto var = make_variable(pname, ptype);
-		stmt->func_def.parameters->push_back(var);
+		auto var = new Variable(ptype, tok);
+		var->name = pname;
+		stmt->parameters.push_back(var);
 
 		if (add_to_scope) {
 			scope->add(tok, var);
@@ -385,7 +377,7 @@ void Parser::parse_function_parameters(Stmt *stmt, bool add_to_scope) {
 		eat_token_if(',');
 
 		if (eat_token_if(TOKEN_DOT_DOT)) {
-			stmt->func_def.flags |= FUNCTION_VARARG;
+			stmt->flags |= FUNCTION_VARARG;
 			if (!eat_token_if(')')) {
 				messenger->report(lexer.peek_token(), "Expected ) after vararg ..");
 			}
@@ -395,7 +387,7 @@ void Parser::parse_function_parameters(Stmt *stmt, bool add_to_scope) {
 }
 
 Stmt *Parser::parse_variable_definition(Token *name_token, u8 flags) {
-	auto stmt = make_stmt(VARIABLE_DEFINITION, name_token);
+	auto stmt = new VariableDefinition(name_token);
 
     parse_variable_definition_base(name_token, flags, stmt);
 
@@ -406,13 +398,14 @@ Stmt *Parser::parse_variable_definition_type(Token *name_token, u8 flags) {
     QType *type = parse_type();
 
     if (eat_token_if(';')) {
-        auto stmt = make_stmt(VARIABLE_DEFINITION, name_token);
-        stmt->var_def.var = make_variable(name_token->lexeme, type);
-        stmt->var_def.var->is_const = flags & VAR_CONST;
-        stmt->var_def.value = 0;
-        stmt->var_def.flags = flags;
+        auto stmt = new VariableDefinition(name_token);
+        stmt->var = new Variable(type, name_token);
+        stmt->var->name = name_token->lexeme;
+        stmt->var->is_const = flags & VAR_CONST;
+        stmt->value = 0;
+        stmt->flags = flags;
 
-        scope->add(name_token, stmt->var_def.var);
+        scope->add(name_token, stmt->var);
 
         eat_semicolon();
         return stmt;
@@ -424,13 +417,13 @@ Stmt *Parser::parse_variable_definition_type(Token *name_token, u8 flags) {
 
     lexer.eat_token();
 
-    auto stmt = make_stmt(VARIABLE_DEFINITION, name_token);
+    auto stmt = new VariableDefinition(name_token);
 
     auto val_type = parse_variable_definition_base(name_token, flags, stmt);
     if (!typer->compare(type, val_type)) {
         if (typer->can_convert_implicit(val_type, type)) {
-            stmt->var_def.value = cast(stmt->var_def.value, type);
-			stmt->var_def.var->type = type;
+            stmt->value = cast(stmt->value, type);
+			stmt->var->type = type;
         } else {
             messenger->report(name_token, "Specified type of variable and type of value do not match");
         }
@@ -439,16 +432,17 @@ Stmt *Parser::parse_variable_definition_type(Token *name_token, u8 flags) {
 	return stmt;
 }
 
-QType *Parser::parse_variable_definition_base(Token *name_token, u8 flags, Stmt *stmt) {
+QType *Parser::parse_variable_definition_base(Token *name_token, u8 flags, VariableDefinition *stmt) {
     auto val_expr = parse_expr();
     auto val_type = val_expr->type;
 
-	stmt->var_def.var = make_variable(name_token->lexeme, val_type);
-	stmt->var_def.var->is_const = flags & VAR_CONST;
-	stmt->var_def.value = val_expr;
-    stmt->var_def.flags = flags;
+	stmt->var = new Variable(val_type, name_token);
+	stmt->var->name = name_token->lexeme;
+	stmt->var->is_const = flags & VAR_CONST;
+	stmt->value = val_expr;
+    stmt->flags = flags;
 
-	scope->add(name_token, stmt->var_def.var);
+	scope->add(name_token, stmt->var);
 
 	eat_semicolon();
 
@@ -456,7 +450,7 @@ QType *Parser::parse_variable_definition_base(Token *name_token, u8 flags, Stmt 
 }
 
 Stmt *Parser::parse_multiple_variable_definition(Token *name_token) {
-    auto vars = (std::vector<Variable *> *) arena_alloc(sizeof(std::vector<Variable *>));
+    std::vector<Variable *> vars;
     std::vector<Token *> var_names;
 
     var_names.push_back(name_token);
@@ -471,76 +465,73 @@ Stmt *Parser::parse_multiple_variable_definition(Token *name_token) {
         messenger->report(lexer.peek_token(), "Expected '='");
     }
 
-    auto stmt = make_stmt(VARIABLE_DEFINITION, name_token); 
-    stmt->var_def.flags |= VAR_MULTIPLE;
-    stmt->var_def.vars = vars;
+    auto stmt = new VariableDefinition(name_token); 
+    stmt->flags |= VAR_MULTIPLE;
+    stmt->vars = vars;
 
     auto expr_tok = lexer.peek_token();
-    auto val = parse_expr();
-    if (val->kind != FUNCTION_CALL) {
-        messenger->report(expr_tok, "Expected function call with multiple return values"); 
-    }
-    auto return_types = val->func_call.target_func_decl->func_def.return_types;
-    if (var_names.size() > return_types->size()) {
+    auto val = parse_function_call();
+
+    auto return_types = val->target_func_decl->return_types;
+    if (var_names.size() > return_types.size()) {
         messenger->report(expr_tok, "Can't assign more variables then function returns values");
     }
     
     for (int i = 0; i < var_names.size(); ++i) {
-        vars->push_back(add_or_get_variable(var_names[i], (*return_types)[i]));
+        vars.push_back(add_or_get_variable(var_names[i], return_types[i]));
     }
 
     eat_token_if(';');
 
-    stmt->var_def.value = val;
+    stmt->value = val;
     return stmt;
 }
 
 Stmt *Parser::parse_block() {
-    auto stmt = make_stmt(BLOCK, lexer.peek_token());
-    stmt->stmts = (std::vector<Stmt *> *) arena_alloc(sizeof(std::vector<Stmt *>));
+    auto stmt = new CompoundStmt(lexer.peek_token());
 
     while (!eat_token_if('}')) {
-        stmt->stmts->push_back(parse_stmt());
+        stmt->stmts.push_back(parse_stmt());
     }
 
     return stmt;
 }
 
 Stmt *Parser::parse_if() {
-    auto stmt = make_stmt(IF, lexer.last_token());
+    auto stmt = new If(lexer.last_token());
 
     auto cond = parse_expr();
     if (!cond->type->isbool()) {
         cond = make_compare_zero(cond);
     }
 
-    stmt->if_.then = parse_stmt();
+    stmt->then = parse_stmt();
     if (eat_token_if(TOKEN_ELSE)) {
-        stmt->if_.otherwise = parse_stmt();
+        stmt->otherwise = parse_stmt();
     } else {
-        stmt->if_.otherwise = 0;
+        stmt->otherwise = 0;
     }
-    stmt->if_.cond = cond;
+    stmt->cond = cond;
 
     return stmt;
 }
 
 Stmt *Parser::parse_while() {
-    auto stmt = make_stmt(WHILE, lexer.last_token());
+    auto stmt = new While(lexer.last_token());
 
     auto cond = parse_expr();
     if (!cond->type->isbool()) {
         cond = make_compare_zero(cond);
     }
     
-    stmt->while_.cond = cond;
-    stmt->while_.body = parse_stmt();
+    stmt->cond = cond;
+    stmt->body = parse_stmt();
     return stmt;
 }
 
 Stmt *Parser::parse_for() {
 	auto var_tok = lexer.peek_token();
-	auto stmt = make_stmt(FOR, lexer.last_token());
+	auto stmt = new For(lexer.last_token());
 
 	Variable *var = 0;
 	QType *iterator_type = 0;
@@ -556,10 +547,13 @@ Stmt *Parser::parse_for() {
 		lexer.eat_token();
 		lexer.eat_token();
 
-		var = make_variable(var_tok->lexeme, 0);
+		var = new Variable(0, var_tok);
+		var->name = var_tok->lexeme;
+
 		scope->add(var_tok, var);
 	} else {
-		var = make_variable("it", 0);
+		var = new Variable(0, var_tok);
+		var->name = "it";
 		scope->add_replace(var);
 	}
 
@@ -567,17 +561,17 @@ Stmt *Parser::parse_for() {
 	if (eat_token_if(TOKEN_DOT_DOT)) {
 		auto size_ty = typer->get("u64");
 		auto range_to = parse_expr();
-		stmt->for_.range_from = cast(iterator, size_ty);
-		stmt->for_.range_to = cast(range_to, size_ty);
-		stmt->for_.is_range = true;
+		stmt->range_from = cast(iterator, size_ty);
+		stmt->range_to = cast(range_to, size_ty);
+		stmt->is_range = true;
 
 		if (!iterator->type->isint() || !range_to->type->isint()) {
 			messenger->report(var_tok, "From and range expressions have to be integer expressions!");
 		}
 		iterator_type = size_ty;
 	} else {
-		stmt->for_.iterator = iterator;
-		stmt->for_.is_range = false;
+		stmt->iterator = iterator;
+		stmt->is_range = false;
 
 		if (iterator->type->isstring()) {
 			iterator_type = typer->get("char");
@@ -593,40 +587,36 @@ Stmt *Parser::parse_for() {
 	auto body = parse_stmt();
 	scope_pop();
 
-	stmt->for_.var = var;
-	stmt->for_.body = body;
+	stmt->var = var;
+	stmt->body = body;
 
 	return stmt;
 }
 
 Stmt *Parser::parse_return() {
-    auto return_types = current_function->func_def.return_types;
-    std::vector<Expr *> *return_values;
+    auto return_types = current_function->return_types;
+    std::vector<Expr *> return_values;
     auto tok = lexer.peek_token();
 
-    if (eat_token_if(';')) {
-        return_values = 0;
-    } else {
-        return_values = (std::vector<Expr *> *) arena_alloc(sizeof(std::vector<Expr *>));
-
-        return_values->push_back(parse_expr());
+    if (!eat_token_if(';')) {
+        return_values.push_back(parse_expr());
 
         while (!eat_token_if(';')) {
             eat_token_if(',');
-            return_values->push_back(parse_expr());
+            return_values.push_back(parse_expr());
         }
     }
 
-    if (return_values->size() != return_types->size()) {
+    if (return_values.size() != return_types.size()) {
         messenger->report(tok, "Return values do not match return types of function");
     } else {
-        for (int i = 0; i < return_values->size(); ++i) {
-            auto ret_val = (*return_values)[i];
-            auto ret_type = (*return_types)[i];
+        for (int i = 0; i < return_values.size(); ++i) {
+            auto ret_val = return_values[i];
+            auto ret_type = return_types[i];
 
             if (!typer->compare(ret_val->type, ret_type)) {
                 if (typer->can_convert_implicit(ret_val->type, ret_type)) {
-                    (*return_values)[i] = cast(ret_val, ret_type);
+                    return_values[i] = cast(ret_val, ret_type);
                 } else {
                     messenger->report(tok, "Return values do not match return types of function");
                 }
@@ -634,14 +624,14 @@ Stmt *Parser::parse_return() {
         }
     }
 
-	auto stmt = make_stmt(RETURN, tok);
+    auto stmt = new Return(tok);
 	stmt->return_values = return_values;
 
 	return stmt;
 }
 
 Stmt *Parser::parse_delete() {
-    auto stmt = make_stmt(DELETE, lexer.last_token());
+    auto stmt = new Delete(lexer.last_token());
     auto tok = lexer.peek_token();
     stmt->target_expr = parse_expr();
 
@@ -678,7 +668,7 @@ Stmt *Parser::try_parse_atom() {
         }
 	}
 
-    auto stmt = make_stmt(EXPR_STMT, atom);
+    auto stmt = new ExprStmt(atom);
 	stmt->target_expr = parse_expr();
     eat_semicolon();
 
@@ -736,8 +726,9 @@ Expr *Parser::parse_binary(int prec) {
             if (!expr_is_targatable(lhs)) {
                 messenger->report(tok, "Can't assign value to this expression");
             }
-            if (lhs->kind == VARIABLE) {
-                if (lhs->var->is_const) {
+            if (lhs->kind() == VARIABLE) {
+                auto lhs_var = (Variable *) lhs;
+                if (lhs_var->is_const) {
                     messenger->report(tok, "Can't assign value to constant variable");
                 }
             }
@@ -764,10 +755,10 @@ Expr *Parser::parse_binary(int prec) {
             }
         }
 
-        auto expr = make_expr(BINARY, eval_type, tok);
-        expr->bin.lhs = lhs;
-        expr->bin.rhs = rhs;
-        expr->bin.op = op_it->first;
+        auto expr = new Binary(eval_type, tok);
+        expr->lhs = lhs;
+        expr->rhs = rhs;
+        expr->op = op_it->first;
 
         lhs = expr;
 	}
@@ -801,10 +792,10 @@ Expr *Parser::parse_postfix() {
 			messenger->report(tok, "Can't use ++ or -- on non-integer expression");
 		}
 
-		auto expr = make_expr(UNARY, target->type, tok);
-		expr->unary.target = target;
-		expr->unary.op = tok->type;
-		expr->unary.ispost = true;
+		auto expr = new Unary(target->type, tok);
+		expr->target = target;
+		expr->op = tok->type;
+		expr->ispost = true;
 		return expr;
 	}
 
@@ -820,9 +811,9 @@ Expr *Parser::parse_postfix() {
 			messenger->report(tok, "Index has to be of integer type");
 		}
 
-		auto indexed = make_expr(INDEXED, target->type->element_type, tok);
-		indexed->indexed.index = index;
-		indexed->indexed.target = target;
+		auto indexed = new Indexed(target->type->element_type, tok);
+		indexed->index = index;
+		indexed->target = target;
 
 		return indexed;
 	}
@@ -839,8 +830,8 @@ Expr *Parser::parse_access() {
 
     auto ty = e->type;
 
-    auto indices = (std::vector<int> *) arena_alloc(sizeof(std::vector<int>));
-    auto dereferences = (std::vector<bool> *) arena_alloc(sizeof(std::vector<bool>));
+    std::vector<int> indices;
+    std::vector<bool> dereferences;
 
     while (eat_token_if('.')) {
         bool dereference = false;
@@ -863,8 +854,8 @@ Expr *Parser::parse_access() {
         bool found = false;
         for (auto field : *ty->fields) {
             if (strcmp(field.first, mem_token->lexeme) == 0) {
-                dereferences->push_back(dereference);
-                indices->push_back(i);
+                dereferences.push_back(dereference);
+                indices.push_back(i);
                 ty = field.second;
                 found = true;
                 break;
@@ -876,10 +867,10 @@ Expr *Parser::parse_access() {
         }
     }
 
-    auto expr = make_expr(MEMBER, ty, lexer.last_token());
-    expr->member.target = e;
-    expr->member.indices = indices;
-    expr->member.dereferences = dereferences;
+    auto expr = new Member(ty, lexer.last_token());
+    expr->target = e;
+    expr->indices = indices;
+    expr->dereferences = dereferences;
     return expr;
 }
 
@@ -888,7 +879,7 @@ Expr *Parser::parse_unary() {
 
     if (eat_token_if('&')) {
         auto target = parse_primary();
-        auto target_kind = target->kind;
+        auto target_kind = target->kind();
 
         if (target_kind != VARIABLE) {
             messenger->report(tok, "Can't reference non variable");
@@ -896,9 +887,9 @@ Expr *Parser::parse_unary() {
 
         auto target_type = target->type;
 
-		auto expr = make_expr(UNARY, typer->make_pointer(target_type), tok); 
-        expr->unary.target = target;
-        expr->unary.op = '&';
+		auto expr = new Unary(typer->make_pointer(target_type), tok); 
+        expr->target = target;
+        expr->op = '&';
 
         return expr;
     } else if (eat_token_if('*')) {
@@ -908,7 +899,7 @@ Expr *Parser::parse_unary() {
             messenger->report(tok, "Can't dereference non variable");
         }
 
-		auto expr = make_expr(DEREF, target->type->element_type, tok);
+		auto expr = new Deref(target->type->element_type, tok);
         expr->target = target;
 		
         return expr;
@@ -920,17 +911,17 @@ Expr *Parser::parse_unary() {
             target = make_compare_zero(target);
         }
 
-		auto expr = make_expr(UNARY, target->type, tok);
-        expr->unary.target = target;
-        expr->unary.op = '!';
+		auto expr = new Unary(target->type, tok);
+        expr->target = target;
+        expr->op = '!';
 		
         return expr;
     } else if (eat_token_if('-')) {
         auto target = parse_primary();
 
-		auto expr = make_expr(UNARY, target->type, tok);
-        expr->unary.target = target;
-        expr->unary.op = '-';
+		auto expr = new Unary(target->type, tok);
+        expr->target = target;
+        expr->op = '-';
 		
         return expr;
 	} else if (eat_token_if(TOKEN_PLUS_PLUS) || eat_token_if(TOKEN_MINUS_MINUS)) {
@@ -939,10 +930,10 @@ Expr *Parser::parse_unary() {
 			messenger->report(tok, "Can't use ++ or -- on non-integer expression");
 		}
 
-		auto expr = make_expr(UNARY, target->type, tok);
-		expr->unary.target = target;
-		expr->unary.op = tok->type;
-		expr->unary.ispost = false;
+		auto expr = new Unary(target->type, tok);
+		expr->target = target;
+		expr->op = tok->type;
+		expr->ispost = false;
 		return expr;
 	}
 
@@ -963,7 +954,7 @@ Expr *Parser::parse_primary() {
 	if (tok->type == TOKEN_INT_LIT) {
 		lexer.eat_token();
 		
-		auto expr = make_expr(INT_LIT, typer->get("s32"), tok);
+		auto expr = new IntegerLiteral(typer->get("s32"), tok);
         expr->int_value = tok->int_value;
 
         return expr;
@@ -972,7 +963,7 @@ Expr *Parser::parse_primary() {
 	if (tok->type == TOKEN_FLOAT_LIT) {
 		lexer.eat_token();
 
-		auto expr = make_expr(FLOAT_LIT, typer->get("f32"), tok);
+		auto expr = new FloatLiteral(typer->get("f32"), tok);
 		expr->float_value = tok->float_value;
 
 		return expr;
@@ -981,7 +972,7 @@ Expr *Parser::parse_primary() {
 	if (tok->type == TOKEN_CHAR_LIT) {
 		lexer.eat_token();
 		
-		auto expr = make_expr(INT_LIT, typer->get("char"), tok);
+		auto expr = new IntegerLiteral(typer->get("char"), tok);
         expr->int_value = tok->char_value;
 
         return expr;
@@ -990,7 +981,7 @@ Expr *Parser::parse_primary() {
     if (tok->type == TOKEN_STRING_LIT) {
 		lexer.eat_token();
 		
-		auto expr = make_expr(STRING_LIT, typer->get("str"), tok);
+		auto expr = new QStringLiteral(typer->get("str"), tok);
         expr->string_lit = tok->lexeme;
 
         return expr;
@@ -1000,11 +991,11 @@ Expr *Parser::parse_primary() {
 		lexer.eat_token();
 
         if (eat_token_if('(')) {
-            auto arguments = (std::vector<Expr *> *) arena_alloc(sizeof(std::vector<Expr *>));
+            std::vector<Expr *> arguments;
 
             while (!eat_token_if(')')) {
                 auto arg = parse_expr();
-                arguments->push_back(arg);
+                arguments.push_back(arg);
 
                 eat_token_if(',');
             }
@@ -1012,18 +1003,18 @@ Expr *Parser::parse_primary() {
             auto unmangled_name = tok->lexeme;
 			if (is_builtin(unmangled_name)) {
 				auto return_type = get_builtin_return_type(unmangled_name);
-				auto expr = make_expr(BUILTIN_FUNCTION, return_type, tok);
-				expr->builtin.name = unmangled_name;
-				expr->builtin.arguments = arguments;
+				auto expr = new Builtin(return_type, tok);
+				expr->name = unmangled_name;
+				expr->arguments = arguments;
 				check_builtin_func(tok, expr);
 				return expr;
 			} else {
-				auto func_decl = get_func(tok, arguments);
+				auto func_decl = get_func(tok, &arguments);
 
-				auto return_types = func_decl->func_def.return_types;
-				auto expr = make_expr(FUNCTION_CALL, (*return_types)[0], tok);
-				expr->func_call.arguments = arguments;
-				expr->func_call.target_func_decl = func_decl;
+				auto return_types = func_decl->return_types;
+				auto expr = new FunctionCall(return_types[0], tok);
+				expr->arguments = arguments;
+				expr->target_func_decl = func_decl;
 				return expr;
 			}
         }
@@ -1042,7 +1033,7 @@ Expr *Parser::parse_primary() {
             auto categories = *ty->categories;
             for (int i = 0; i < categories.size(); ++i) {
                 if (strcmp(categories[i], category->lexeme) == 0) {
-                    auto expr = make_expr(INT_LIT, typer->get("s32"), tok);
+                    auto expr = new IntegerLiteral(typer->get("s32"), tok);
                     expr->int_value = (*ty->indices)[i];
                     return expr;
                 }
@@ -1051,32 +1042,28 @@ Expr *Parser::parse_primary() {
             messenger->report(category, "Value not found in enum");
         }
 
-		auto var = scope->find(tok);
-		auto expr = make_expr(VARIABLE, var->type, tok);
-		expr->var = var;
-
-		return expr;
+		return scope->find(tok);
 	}
 
 	if (eat_token_if('{')) {
-		auto values = (std::vector<Expr *> *) arena_alloc(sizeof(std::vector<Expr *>));
+        std::vector<Expr *> values;
 		while (!eat_token_if('}')) {
-			values->push_back(parse_expr());
+			values.push_back(parse_expr());
 			eat_token_if(',');
 		}
 
 		auto ty_tok = lexer.peek_token();
 		auto ty = parse_type();
 		if (ty->isstruct()) {
-			if (values->size() != ty->fields->size()) {
+			if (values.size() != ty->fields->size()) {
 				messenger->report(ty_tok, "Compound literal do not match struct type");
 			}
-			for (int i = 0; i < values->size(); ++i) {
-				auto val_type = (*values)[i]->type;
+			for (int i = 0; i < values.size(); ++i) {
+				auto val_type = values[i]->type;
 				auto field_type = (*ty->fields)[i].second;
 				if (!typer->compare(val_type, field_type)) {
 					if (typer->can_convert_implicit(val_type, field_type)) {
-						(*values)[i] = cast((*values)[i], field_type);
+						values[i] = cast(values[i], field_type);
 					} else {
 						messenger->report(ty_tok, "Compound literal does not match struct type");
 					}
@@ -1084,11 +1071,11 @@ Expr *Parser::parse_primary() {
 			}
 		} else if (ty->isarray()) {
 			auto arr_type = ty->element_type;
-			for (int i = 0; i < values->size(); ++i) {
-				auto val_type = (*values)[i]->type;
+			for (int i = 0; i < values.size(); ++i) {
+				auto val_type = values[i]->type;
 				if (!typer->compare(val_type, arr_type)) {
 					if (typer->can_convert_implicit(val_type, arr_type)) {
-						(*values)[i] = cast((*values)[i], arr_type);
+						values[i] = cast(values[i], arr_type);
 					} else {
 						messenger->report(ty_tok, "Compound literal does not match array type");
 					}
@@ -1098,32 +1085,32 @@ Expr *Parser::parse_primary() {
 			messenger->report(ty_tok, "Illegal type for compound literal.\nExpected struct or array type!");
 		}
 
-		auto expr = make_expr(COMPOUND_LIT, ty, tok);
-		expr->init.values = values;
+		auto expr = new CompoundLiteral(ty, tok);
+		expr->values = values;
 		return expr;
 	}
 
 	if (eat_token_if(TOKEN_NEW)) {
 	    auto ty = parse_type();
-	    auto expr = make_expr(NEW, typer->make_pointer(ty), tok);
+	    auto expr = new New(typer->make_pointer(ty), tok);
 	    expr->alloc_type = ty;
 	    return expr;
     }
 
 	if (eat_token_if(TOKEN_TRUE)) {
-	    auto expr = make_expr(INT_LIT, typer->get("bool"), tok);
+	    auto expr = new IntegerLiteral(typer->get("bool"), tok);
 	    expr->int_value = 1;
 	    return expr;
     }
 
 	if (eat_token_if(TOKEN_FALSE)) {
-	    auto expr = make_expr(INT_LIT, typer->get("bool"), tok);
+	    auto expr = new IntegerLiteral(typer->get("bool"), tok);
 	    expr->int_value = 0;
 	    return expr;
     }
 
 	if (eat_token_if(TOKEN_NIL)) {
-	    auto expr = make_expr(NIL, typer->make_pointer(typer->get("u8")), tok);
+	    auto expr = new Nil(typer->make_pointer(typer->get("u8")), tok);
 	    return expr;
     }
 
@@ -1131,43 +1118,77 @@ Expr *Parser::parse_primary() {
 	return 0;
 }
 
+FunctionCall *Parser::parse_function_call() {
+    auto tok = lexer.peek_token();
+	if (!eat_token_if(TOKEN_ATOM)) {
+	    messenger->report(lexer.peek_token(), "Expected function call!");
+    }
+
+    if (!eat_token_if('(')) {
+	    messenger->report(lexer.peek_token(), "Expected function call!");
+    }
+
+    std::vector<Expr *> arguments;
+
+    while (!eat_token_if(')')) {
+        auto arg = parse_expr();
+        arguments.push_back(arg);
+
+        eat_token_if(',');
+    }
+
+    auto unmangled_name = tok->lexeme;
+    auto func_decl = get_func(tok, &arguments);
+
+    auto return_types = func_decl->return_types;
+    auto expr = new FunctionCall(return_types[0], tok);
+    expr->arguments = arguments;
+    expr->target_func_decl = func_decl;
+    return expr;
+}
+
 Expr *Parser::cast(Expr *target, QType *to) {
-    auto expr = make_expr(CAST, to, target->location);
-    expr->cast.from = target->type;
-    expr->cast.to = to;
-    expr->cast.target = target;
+    auto expr = new Cast(to, target->location);
+    expr->from = target->type;
+    expr->to = to;
+    expr->target = target;
 
     return expr;
 }
 
 Expr *Parser::make_compare_zero(Expr *expr) {
-    Expr *cmp_expr = make_expr(COMPARE_ZERO, typer->get("bool"), expr->location);
+    auto cmp_expr = new CompareZero(typer->get("bool"), expr->location);
     cmp_expr->target = expr;
     return cmp_expr;
 }
 
 Expr *Parser::make_compare_strings(Expr *lhs, Expr *rhs, TokenType op) {
-    auto arguments = (std::vector<Expr *> *) arena_alloc(sizeof(std::vector<Expr *>));
+    std::vector<Expr *> arguments;
 
-    arguments->push_back(lhs);
-    arguments->push_back(rhs);
+    arguments.push_back(lhs);
+    arguments.push_back(rhs);
 
     auto fn = get_func("strcmp_s_s");
 
-    auto fn_call_expr = make_expr(FUNCTION_CALL, typer->get("s32"), lhs->location);
-    fn_call_expr->func_call.arguments = arguments;
-    fn_call_expr->func_call.target_func_decl = fn;
+    auto fn_call_expr = new FunctionCall(typer->get("s32"), lhs->location);
+    fn_call_expr->arguments = arguments;
+    fn_call_expr->target_func_decl = fn;
 
-    auto zero = make_expr(INT_LIT, typer->get("s32"), lhs->location);
+    auto zero = new IntegerLiteral(typer->get("s32"), lhs->location);
     zero->int_value = 0;
     
-    auto cmp_expr = make_expr(BINARY, typer->get("bool"), lhs->location);
-    cmp_expr->bin.lhs = fn_call_expr;
-    cmp_expr->bin.rhs = zero;
-    cmp_expr->bin.op = op;
+    auto cmp_expr = new Binary(typer->get("bool"), lhs->location);
+    cmp_expr->lhs = fn_call_expr;
+    cmp_expr->rhs = zero;
+    cmp_expr->op = op;
 
     return cmp_expr;
 }
+
+bool Parser::expr_is_targatable(Expr *expr) {
+    ExprKind kind = expr->kind();
+    return kind == VARIABLE || kind == DEREF || kind == MEMBER || kind == INDEXED;
+}	
 
 QType *Parser::parse_type() {
 	auto tok = lexer.peek_token();
@@ -1185,10 +1206,6 @@ QType *Parser::parse_type() {
 	}
 	lexer.eat_token();
 	return typer->get(tok);
-}
-
-bool Parser::expr_is_targatable(Expr *expr) {
-    return expr->kind == VARIABLE || expr->kind == DEREF || expr->kind == MEMBER || expr->kind == INDEXED;
 }
 
 bool Parser::token_is_op(char op, int off) {
@@ -1222,19 +1239,19 @@ void Parser::scope_pop() {
 	scope = scope->parent;
 }
 
-const char *Parser::mangle_func(Stmt *stmt) {
-    auto unmangled_name = stmt->func_def.unmangled_name;
+const char *Parser::mangle_func(FunctionDefinition *stmt) {
+    auto unmangled_name = stmt->unmangled_name;
 	if (strcmp(unmangled_name, "main") == 0 ||
-		stmt->func_def.flags & FUNCTION_BUILTIN) {
+		stmt->flags & FUNCTION_BUILTIN) {
 		return unmangled_name;
 	}
 	std::stringstream ss;
 	ss << unmangled_name;
-	for (auto par : *stmt->func_def.parameters) {
+	for (auto par : stmt->parameters) {
 		ss << "_" << typer->mangle_type(par->type);
 	}
 
-    if (stmt->func_def.flags & FUNCTION_VARARG)
+    if (stmt->flags & FUNCTION_VARARG)
         ss << "vararg";
 
 	std::string str = ss.str();
@@ -1281,7 +1298,7 @@ Variable *Scope::find_null(const char *name) {
 	return it->second;
 }
 
-void Parser::insert_func(Token *name_token, const char *mangled_name, Stmt *func_decl, bool is_extern) {
+void Parser::insert_func(Token *name_token, const char *mangled_name, FunctionDefinition *func_decl, bool is_extern) {
     auto sname = std::string(mangled_name);
     auto it = functions.find(sname);
     if (it != functions.end()) {
@@ -1293,18 +1310,18 @@ void Parser::insert_func(Token *name_token, const char *mangled_name, Stmt *func
     }
 }
 
-Stmt *Parser::get_func(Token *name_token, std::vector<Expr *> *arguments) {
+FunctionDefinition *Parser::get_func(Token *name_token, std::vector<Expr *> *arguments) {
     auto unmangled_name = name_token->lexeme;
 
     for (auto key : functions) {
         auto decl = key.second;
-        if (strcmp(decl->func_def.unmangled_name, unmangled_name) != 0)
+        if (strcmp(decl->unmangled_name, unmangled_name) != 0)
             continue;
 
-        auto decl_args = decl->func_def.parameters;
-        int decl_ac = decl_args->size();
+        auto decl_args = decl->parameters;
+        int decl_ac = decl_args.size();
         int call_ac = arguments->size();
-        bool vararg = decl->func_def.flags & FUNCTION_VARARG;
+        bool vararg = decl->flags & FUNCTION_VARARG;
 
         if (call_ac < decl_ac || (call_ac > decl_ac && !vararg))
             continue;
@@ -1313,7 +1330,7 @@ Stmt *Parser::get_func(Token *name_token, std::vector<Expr *> *arguments) {
         for (int i = 0; i < decl_ac; ++i) {
             auto arg = (*arguments)[i];
             QType *arg_type = arg->type;
-            QType *par_type = (*decl_args)[i]->type;
+            QType *par_type = decl_args[i]->type;
 
             if (!typer->compare(arg_type, par_type)) {
                 if (typer->can_convert_implicit(arg_type, par_type)) {
@@ -1334,35 +1351,9 @@ Stmt *Parser::get_func(Token *name_token, std::vector<Expr *> *arguments) {
     return 0;
 }
 
-Stmt *Parser::get_func(const char *name) {
+FunctionDefinition *Parser::get_func(const char *name) {
     auto sname = std::string(name);
     return functions[sname];
-}
-
-Stmt *Parser::make_stmt(StmtKind kind, Token *location_token) {
-    auto stmt = create_stmt();
-    stmt->kind = kind;
-	stmt->location = location_token->location;
-    return stmt;
-}
-
-Expr *Parser::make_expr(ExprKind kind, QType *type, Token *location_token) {
-	return make_expr(kind, type, location_token->location);
-}
-
-Expr *Parser::make_expr(ExprKind kind, QType *type, SourceLocation location) {
-	auto expr = create_expr();
-	expr->kind = kind;
-	expr->type = type;
-	expr->location = location;
-	return expr;
-}
-
-Variable *Parser::make_variable(const char *name, QType *type) {
-    auto var = create_variable();
-	var->name = name;
-	var->type = type;
-    return var;
 }
 
 Variable *Parser::add_or_get_variable(Token *token, QType *type) {
@@ -1374,7 +1365,7 @@ Variable *Parser::add_or_get_variable(Token *token, QType *type) {
         return var;
     }
 
-    var = create_variable();
+    var = new Variable(type, token->location);
 	var->name = token->lexeme;
 	var->type = type;
 	scope->add(token, var);

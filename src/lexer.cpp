@@ -7,7 +7,6 @@
 #include <stack>
 
 #include "lexer.h"
-#include "alloc.h"
 
 struct LexerInfo {
     const char *input;
@@ -142,7 +141,7 @@ Token *Lexer::read_token() {
         return read_token();
     }
 
-	auto t = create_token();
+	auto t = new Token();
 	set_token_start(t);
 
 	if (c == '\0') {

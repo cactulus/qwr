@@ -12,7 +12,7 @@
 #include "parser.h"
 #include "builtin.h"
 
-#define BUILTIN(e, x) (strcmp(expr->builtin.name, x) == 0)
+#define BUILTIN(e, x) (strcmp(expr->name, x) == 0)
 
 using namespace llvm;
 
@@ -31,8 +31,8 @@ QType *get_builtin_return_type(const char *name) {
 	return builtin_functions[std::string(name)];
 }
 
-void Parser::check_builtin_func(Token *token, Expr *expr) {
-	auto args = *expr->builtin.arguments;
+void Parser::check_builtin_func(Token *token, Builtin *expr) {
+	auto args = expr->arguments;
 	if (BUILTIN(expr, "len")) {
 		auto ty = args[0]->type;
 		if (args.size() > 1 || args.size() < 1) {
@@ -56,7 +56,7 @@ void Parser::check_builtin_func(Token *token, Expr *expr) {
 		auto val_ty = args[1]->type;
 		if (!typer->compare(arr_ty, val_ty)) {
 			if (typer->can_convert_implicit(val_ty, arr_ty)) {
-				(*expr->builtin.arguments)[1] = cast(args[1], arr_ty);
+				expr->arguments[1] = cast(args[1], arr_ty);
 			} else {
 				messenger->report(token, "Provided value does not match element type of array");
 			}
@@ -67,8 +67,8 @@ void Parser::check_builtin_func(Token *token, Expr *expr) {
 	assert(0 && "Not implemented builtin function");
 }
 
-Value *CodeGenerator::gen_builtin(Expr *expr) {
-	auto args = *expr->builtin.arguments;
+Value *CodeGenerator::gen_builtin(Builtin *expr) {
+	auto args = expr->arguments;
 
 	if (BUILTIN(expr, "len")) {
 		auto ty = args[0]->type;
@@ -95,8 +95,8 @@ Value *CodeGenerator::gen_builtin(Expr *expr) {
 			fn = gen_append_func(fn_name, arr_ty);
 		}
 
-		auto loaded_arr = gen_expr(arr);
-		auto value = gen_expr(args[1]);
+		auto loaded_arr = gen(arr);
+		auto value = gen(args[1]);
 
 		builder->CreateCall(fn, { loaded_arr, value });
 	}

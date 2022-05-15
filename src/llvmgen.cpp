@@ -20,6 +20,7 @@
 
 using namespace llvm;
 
+
 typedef void (CodeGenerator::*gen_stmt_fun) (Stmt *stmt);
 typedef Value *(CodeGenerator::*gen_expr_fun) (Expr *expr);
 
@@ -30,7 +31,7 @@ const std::unordered_map<StmtKind, gen_stmt_fun> stmt_gen_funs = {
     {IF, (gen_stmt_fun) &CodeGenerator::gen_if},
     {WHILE, (gen_stmt_fun) &CodeGenerator::gen_while},
 	{FOR, (gen_stmt_fun)&CodeGenerator::gen_for},
-    {BLOCK, (gen_stmt_fun) &CodeGenerator::gen_block},
+    {COMPOUND, (gen_stmt_fun) &CodeGenerator::gen_compound},
 	{EXPR_STMT, (gen_stmt_fun) &CodeGenerator::gen_expr_stmt},
 	{DELETE, (gen_stmt_fun) &CodeGenerator::gen_delete},
 };
@@ -87,35 +88,35 @@ void CodeGenerator::init_debug(const char *src_file) {
 	dbg_scopes.push_back(dbg_file);
 }
 
-void CodeGenerator::gen_stmt(Stmt *stmt) {
+void CodeGenerator::gen(Stmt *stmt) {
     if (!stmt)
         return;
 
 	if (debug)
 		emit_location_dbg(stmt);
 
-	auto it = stmt_gen_funs.find(stmt->kind);
+	auto it = stmt_gen_funs.find(stmt->kind());
 	gen_stmt_fun fn = it->second;
 	(*this.*fn)(stmt);
 }
 
-void CodeGenerator::gen_func_def(Stmt *stmt) {
-	std::vector<Type *> parameter_types(stmt->func_def.parameters->size());
-	for (int i = 0; i < stmt->func_def.parameters->size(); i++) {
-		parameter_types[i] = (*stmt->func_def.parameters)[i]->type->llvm_type;
+void CodeGenerator::gen_func_def(FunctionDefinition *stmt) {
+	std::vector<Type *> parameter_types(stmt->parameters.size());
+	for (int i = 0; i < stmt->parameters.size(); i++) {
+		parameter_types[i] = stmt->parameters[i]->type->llvm_type;
 	}
-	auto ret_type = gen_return_type(stmt->func_def.return_types);
-	auto fun_type = FunctionType::get(ret_type, parameter_types, stmt->func_def.flags & FUNCTION_VARARG);
+	auto ret_type = gen_return_type(stmt->return_types);
+	auto fun_type = FunctionType::get(ret_type, parameter_types, stmt->flags & FUNCTION_VARARG);
 	auto linkage = Function::ExternalLinkage;
 
-	auto name = (stmt->func_def.flags & FUNCTION_EXTERN) ?
-				stmt->func_def.unmangled_name :
-				stmt->func_def.mangled_name;
+	auto name = (stmt->flags & FUNCTION_EXTERN) ?
+				stmt->unmangled_name :
+				stmt->mangled_name;
 
 	auto fn = Function::Create(fun_type, linkage, name, llvm_module);
-    stmt->func_def.llvm_ref = fn;
+    stmt->llvm_ref = fn;
 
-	if (stmt->func_def.flags & FUNCTION_EXTERN) {
+	if (stmt->flags & FUNCTION_EXTERN) {
 		return;
 	}
 
@@ -123,9 +124,9 @@ void CodeGenerator::gen_func_def(Stmt *stmt) {
 
 	if (debug) {
 		std::vector<Metadata *> dbg_params;
-		dbg_params.push_back(convert_type_dbg((*stmt->func_def.return_types)[0]));
+		dbg_params.push_back(convert_type_dbg(stmt->return_types[0]));
 		for (int i = 0; i < parameter_types.size(); i++) {
-			dbg_params.push_back(convert_type_dbg((*stmt->func_def.parameters)[i]->type));
+			dbg_params.push_back(convert_type_dbg(stmt->parameters[i]->type));
 		}
 
 		auto dbg_fun_type = dbg_builder->createSubroutineType(
@@ -153,7 +154,7 @@ void CodeGenerator::gen_func_def(Stmt *stmt) {
 
 	int i = 0;
 	for (auto arg_it = fn->arg_begin(); arg_it != fn->arg_end(); arg_it++) {
-		auto par = (*stmt->func_def.parameters)[i];
+		auto par = stmt->parameters[i];
 		auto var = builder->CreateAlloca(par->type->llvm_type);
 		par->llvm_ref = var;
 		builder->CreateStore(&*arg_it, var);
@@ -172,8 +173,8 @@ void CodeGenerator::gen_func_def(Stmt *stmt) {
 		i++;
 	}
 
-	for (auto s : *stmt->func_def.body) {
-		gen_stmt(s);
+	for (auto s : stmt->body) {
+		gen(s);
 	}
 
     if (builder->GetInsertBlock()->getTerminator() == 0) {
@@ -185,25 +186,25 @@ void CodeGenerator::gen_func_def(Stmt *stmt) {
 	}
 }
 
-void CodeGenerator::gen_var_def(Stmt *stmt) {
-	if (stmt->var_def.flags & VAR_GLOBAL) {
-		auto var_name = stmt->var_def.var->name;
+void CodeGenerator::gen_var_def(VariableDefinition *stmt) {
+	if (stmt->flags & VAR_GLOBAL) {
+		auto var_name = stmt->var->name;
 
-		llvm_module->getOrInsertGlobal(var_name, stmt->var_def.var->type->llvm_type);
+		llvm_module->getOrInsertGlobal(var_name, stmt->var->type->llvm_type);
 		auto var = llvm_module->getGlobalVariable(var_name);
 
-		var->setConstant(stmt->var_def.flags & VAR_CONST);
+		var->setConstant(stmt->flags & VAR_CONST);
 		
-		auto init = dyn_cast<Constant>(gen_expr(stmt->var_def.value));
+		auto init = dyn_cast<Constant>(gen(stmt->value));
 		var->setInitializer(init);
 
-		stmt->var_def.var->llvm_ref = var;
-    } else if (stmt->var_def.flags & VAR_MULTIPLE) {
-	    auto val = gen_expr(stmt->var_def.value);
-	    auto vars = stmt->var_def.vars;
+		stmt->var->llvm_ref = var;
+    } else if (stmt->flags & VAR_MULTIPLE) {
+	    auto val = gen(stmt->value);
+	    auto vars = stmt->vars;
 
-	    for (int i = 0; i < vars->size(); ++i) {
-	        auto var = (*vars)[i];
+	    for (int i = 0; i < vars.size(); ++i) {
+	        auto var = vars[i];
 	        auto var_ptr = builder->CreateAlloca(var->type->llvm_type);
             auto var_val = builder->CreateExtractValue(val, i);
 
@@ -221,7 +222,7 @@ void CodeGenerator::gen_var_def(Stmt *stmt) {
             var->llvm_ref = var_ptr;
         }
 	} else {
-		auto var = stmt->var_def.var;
+		auto var = stmt->var;
 		auto var_type = var->type;
 
 		Value *var_ptr = 0;
@@ -239,11 +240,11 @@ void CodeGenerator::gen_var_def(Stmt *stmt) {
 			var_ptr = builder->CreateAlloca(var_type->llvm_type);
 		}
 
-		if (stmt->var_def.value) {
-			if (stmt->var_def.value->kind == COMPOUND_LIT) {
-				auto init_expr = stmt->var_def.value;
+		if (stmt->value) {
+			if (stmt->value->type->isarray() || stmt->value->type->isstruct()) {
+				auto init_expr = (CompoundLiteral *) stmt->value;
 
-				auto values = *init_expr->init.values;
+				auto values = init_expr->values;
 
 				auto target = var_ptr;
 				if (var_type->isarray()) {
@@ -258,7 +259,7 @@ void CodeGenerator::gen_var_def(Stmt *stmt) {
 
 					for (int i = 0; i < values.size(); ++i) {
 						auto llvm_index = ConstantInt::get(s32_ty, i);
-						auto val = gen_expr(values[i]);
+						auto val = gen(values[i]);
 
 						auto tar = builder->CreateInBoundsGEP(target, { llvm_index });
 						builder->CreateStore(val, tar);
@@ -267,14 +268,14 @@ void CodeGenerator::gen_var_def(Stmt *stmt) {
 					for (int i = 0; i < values.size(); ++i) {
 						auto llvm_zero = ConstantInt::get(s32_ty, 0);
 						auto llvm_index = ConstantInt::get(s32_ty, i);
-						auto val = gen_expr(values[i]);
+						auto val = gen(values[i]);
 
 						auto tar = builder->CreateInBoundsGEP(target, { llvm_zero, llvm_index });
 						builder->CreateStore(val, tar);
 					}
 				}
 			} else {
-				auto val = gen_expr(stmt->var_def.value);
+				auto val = gen(stmt->value);
 				if (val->getType()->isStructTy()) {
 					val = builder->CreateExtractValue(val, 0);
 				}
@@ -291,24 +292,24 @@ void CodeGenerator::gen_var_def(Stmt *stmt) {
 				DILocation::get(dbg_scope->getContext(), ln, 0, dbg_scope), builder->GetInsertBlock());
 		}
 
-		stmt->var_def.var->llvm_ref = var_ptr;
+		stmt->var->llvm_ref = var_ptr;
 	} 
 }
 
-void CodeGenerator::gen_return(Stmt *stmt) {
+void CodeGenerator::gen_return(Return *stmt) {
     auto return_values = stmt->return_values;
 
-    if (return_values) {
-        if (return_values->size() == 1) {
-            auto val = (*return_values)[0];
-	        builder->CreateRet(gen_expr(val));
+    if (return_values.size() > 0) {
+        if (return_values.size() == 1) {
+            auto val = return_values[0];
+	        builder->CreateRet(gen(val));
         } else {
             auto ty = gen_return_type(return_values);
             auto val = builder->CreateAlloca(ty);
             Value *ret_val = builder->CreateLoad(val);
 
-            for (int i = 0; i < return_values->size(); ++i) {
-                ret_val = builder->CreateInsertValue(ret_val, gen_expr((*return_values)[i]), i);
+            for (int i = 0; i < return_values.size(); ++i) {
+                ret_val = builder->CreateInsertValue(ret_val, gen(return_values[i]), i);
             }
 
             builder->CreateRet(ret_val);
@@ -318,69 +319,69 @@ void CodeGenerator::gen_return(Stmt *stmt) {
     }
 }
 
-void CodeGenerator::gen_if(Stmt *stmt) {
+void CodeGenerator::gen_if(If *stmt) {
     BasicBlock *true_block = BasicBlock::Create(llvm_context, "", current_function);
     BasicBlock *false_block = NULL;
     BasicBlock *after_block = NULL;
-    if (stmt->if_.otherwise) {
+    if (stmt->otherwise) {
         false_block = BasicBlock::Create(llvm_context, "", current_function);
         after_block = BasicBlock::Create(llvm_context, "", current_function);
     } else {
         false_block = BasicBlock::Create(llvm_context, "", current_function);
         after_block = false_block;
     }
-    Value *cmp = gen_expr(stmt->if_.cond);
+    Value *cmp = gen(stmt->cond);
     builder->CreateCondBr(cmp, true_block, false_block);
     builder->SetInsertPoint(true_block);
-    gen_stmt(stmt->if_.then);
+    gen(stmt->then);
 	if (!true_block->getTerminator()) {
-		builder->CreateBr(stmt->if_.otherwise ? after_block : false_block);
+		builder->CreateBr(stmt->otherwise ? after_block : false_block);
 	}
 
     builder->SetInsertPoint(false_block);
-    if (stmt->if_.otherwise) {
-        gen_stmt(stmt->if_.otherwise);
+    if (stmt->otherwise) {
+        gen(stmt->otherwise);
         builder->CreateBr(after_block);
         builder->SetInsertPoint(after_block);
     }
 }
 
-void CodeGenerator::gen_while(Stmt *stmt) {
+void CodeGenerator::gen_while(While *stmt) {
     BasicBlock *cond_block = BasicBlock::Create(llvm_context, "", current_function);
     BasicBlock *body_block = BasicBlock::Create(llvm_context, "", current_function);
     BasicBlock *after_block = BasicBlock::Create(llvm_context, "", current_function);
 
     builder->CreateBr(cond_block);
     builder->SetInsertPoint(cond_block);
-    Value *cmp = gen_expr(stmt->while_.cond);
+    Value *cmp = gen(stmt->cond);
 
     builder->CreateCondBr(cmp, body_block, after_block);
     builder->SetInsertPoint(body_block);
 
-    gen_stmt(stmt->while_.body);
+    gen(stmt->body);
 
     builder->CreateBr(cond_block);
 
     builder->SetInsertPoint(after_block); 
 }
 
-void CodeGenerator::gen_for(Stmt *stmt) {
+void CodeGenerator::gen_for(For *stmt) {
 	auto size_t = typer->get("u64")->llvm_type;
 	Value *iterator_val;
 	Value *from;
 	Value *to;
 	Type *var_type;
 
-	if (stmt->for_.is_range) {
-		from = gen_expr(stmt->for_.range_from);
-		to = gen_expr(stmt->for_.range_to);
+	if (stmt->is_range) {
+		from = gen(stmt->range_from);
+		to = gen(stmt->range_to);
 		var_type = size_t;
 	} else {
 		from = ConstantInt::get(size_t, 0);
 
-		iterator_val = gen_expr_target(stmt->for_.iterator);
-		auto ty = stmt->for_.iterator->type;
-		var_type = stmt->for_.var->type->llvm_type;
+		iterator_val = gen(stmt->iterator);
+		auto ty = stmt->iterator->type;
+		var_type = stmt->var->type->llvm_type;
 		Function *f;
 		if (ty->isarray()) {
 			f = get_builtin("qwr_array_len");
@@ -396,8 +397,8 @@ void CodeGenerator::gen_for(Stmt *stmt) {
 	auto after_block = BasicBlock::Create(llvm_context, "", current_function);
 
 	auto inc_var = builder->CreateAlloca(size_t);
-	auto var = stmt->for_.is_range ? inc_var : builder->CreateAlloca(var_type);
-	stmt->for_.var->llvm_ref = var;
+	auto var = stmt->is_range ? inc_var : builder->CreateAlloca(var_type);
+	stmt->var->llvm_ref = var;
 
 	builder->CreateStore(from, inc_var);
 
@@ -411,10 +412,10 @@ void CodeGenerator::gen_for(Stmt *stmt) {
 	builder->SetInsertPoint(body_block);
 
 	loaded_index = builder->CreateLoad(inc_var);
-	if (!stmt->for_.is_range) {
-		auto it_ty = stmt->for_.iterator->type;
+	if (!stmt->is_range) {
+		auto it_ty = stmt->iterator->type;
 		if (it_ty->isarray()) {
-			auto data_type = stmt->for_.iterator->type->data_type->llvm_type;
+			auto data_type = stmt->iterator->type->data_type->llvm_type;
 			auto var_val = gen_array_indexed(iterator_val, data_type, loaded_index);
 
 			auto loaded = builder->CreateLoad(var_val);
@@ -427,7 +428,7 @@ void CodeGenerator::gen_for(Stmt *stmt) {
 		}
 	}
 
-	gen_stmt(stmt->for_.body);
+	gen(stmt->body);
 	builder->CreateBr(inc_block);
 
 	builder->SetInsertPoint(inc_block);
@@ -442,16 +443,16 @@ void CodeGenerator::gen_for(Stmt *stmt) {
 	builder->SetInsertPoint(after_block);
 }
 
-void CodeGenerator::gen_block(Stmt *stmt) {
-    for (auto s : *stmt->stmts)
-        gen_stmt(s);
+void CodeGenerator::gen_compound(CompoundStmt *stmt) {
+    for (auto s : stmt->stmts)
+        gen(s);
 }
 
-void CodeGenerator::gen_expr_stmt(Stmt *stmt) {
-    gen_expr(stmt->target_expr);
+void CodeGenerator::gen_expr_stmt(ExprStmt *stmt) {
+    gen(stmt->target_expr);
 }
 
-void CodeGenerator::gen_delete(Stmt *stmt) {
+void CodeGenerator::gen_delete(Delete *stmt) {
 	auto target_ty = stmt->target_expr->type;
 
 	if (target_ty->isarray()) {
@@ -462,25 +463,25 @@ void CodeGenerator::gen_delete(Stmt *stmt) {
 		Function *free_fn = get_builtin("free");
 		auto ptr_ty = typer->make_pointer(typer->get("u8"))->llvm_type;
 
-		Value *target = gen_expr(stmt->target_expr);
+		Value *target = gen(stmt->target_expr);
 
 		Value *to_free = builder->CreatePointerCast(target, ptr_ty);
 		builder->CreateCall(free_fn, { to_free });
 	}
 }
 
-Value *CodeGenerator::gen_expr(Expr *expr) {
+Value *CodeGenerator::gen(Expr *expr) {
 	if (debug)
 		emit_location_dbg(expr);
 
-	auto it = expr_gen_funs.find(expr->kind);
+    auto it = expr_gen_funs.find(expr->kind());
 	gen_expr_fun fn = it->second;
 	return (*this.*fn)(expr);
 }
 
-Value *CodeGenerator::gen_binary(Expr *expr) {
-	auto rhs = gen_expr(expr->bin.rhs);
-	auto top = expr->bin.op;
+Value *CodeGenerator::gen_binary(Binary *expr) {
+	auto rhs = gen(expr->rhs);
+	auto top = expr->op;
 	Instruction::BinaryOps op;
 	CmpInst::Predicate cmpop;
 	Value *new_value = 0;
@@ -551,10 +552,10 @@ Value *CodeGenerator::gen_binary(Expr *expr) {
 
 	if (top == '=') {
 		new_value = rhs;
-	    auto target = gen_expr_target(expr->bin.lhs);
+	    auto target = gen_expr_target(expr->lhs);
 	    builder->CreateStore(new_value, target);
 	} else if (ttype_is_binary(top) || top >= TOKEN_ADD_EQ && top <= TOKEN_MOD_EQ) {
-		auto lhs = gen_expr(expr->bin.lhs);
+		auto lhs = gen(expr->lhs);
 	    if (is_ptr) {
 	        new_value = builder->CreateInBoundsGEP(expr->type->llvm_type, lhs, rhs);
         } else {
@@ -583,18 +584,18 @@ Value *CodeGenerator::gen_binary(Expr *expr) {
             }
         }
         if (top >= TOKEN_ADD_EQ && top <= TOKEN_MOD_EQ) {
-	        auto target = gen_expr_target(expr->bin.lhs);
+	        auto target = gen_expr_target(expr->lhs);
 	        builder->CreateStore(new_value, target);
         }
 	}  else if (ttype_is_conditional(top)) {
-		auto lhs = gen_expr(expr->bin.lhs);
+		auto lhs = gen(expr->lhs);
 		if (ty->isfloat()) {
 			new_value = builder->CreateFCmp(cmpop, lhs, rhs);
 		} else {
 			new_value = builder->CreateICmp(cmpop, lhs, rhs);
 		}
     } else if (ttype_is_logical(top)) {
-		auto lhs = gen_expr(expr->bin.lhs);
+		auto lhs = gen(expr->lhs);
         BasicBlock *rhs_block = BasicBlock::Create(llvm_context, "", current_function);
         BasicBlock *merge_block = BasicBlock::Create(llvm_context, "", current_function);
 
@@ -624,12 +625,12 @@ Value *CodeGenerator::gen_binary(Expr *expr) {
     return new_value;
 }
 
-Value *CodeGenerator::gen_cast(Expr *expr) {
-	QType *ft = expr->cast.from;
-	QType *tt = expr->cast.to;
+Value *CodeGenerator::gen_cast(Cast *expr) {
+	QType *ft = expr->from;
+	QType *tt = expr->to;
     QBaseType bf = ft->base;
     QBaseType bt = tt->base;
-    auto target = gen_expr(expr->cast.target);
+    auto target = gen(expr->target);
     auto to = tt->llvm_type;
 
     if (bf == TYPE_POINTER && bt == TYPE_POINTER) {
@@ -661,17 +662,18 @@ Value *CodeGenerator::gen_cast(Expr *expr) {
 	llvm_unreachable("Cast not implemented");
 }
 
-Value *CodeGenerator::gen_unary(Expr *expr) {
-    switch (expr->unary.op) {
+Value *CodeGenerator::gen_unary(Unary *expr) {
+    switch (expr->op) {
         case '&': {
-            return expr->unary.target->var->llvm_ref;
+            auto var = (Variable *) expr->target;
+            return var->llvm_ref;
         } break;
         case '!': {
-            auto target = gen_expr(expr->unary.target);
+            auto target = gen(expr->target);
             return builder->CreateNot(target);
         } break;
         case '-': {
-            auto target = gen_expr(expr->unary.target);
+            auto target = gen(expr->target);
 			if (expr->type->isfloat()) {
 				return builder->CreateFNeg(target);
 			} else {
@@ -681,12 +683,12 @@ Value *CodeGenerator::gen_unary(Expr *expr) {
         } break;
 		case TOKEN_PLUS_PLUS:
 		case TOKEN_MINUS_MINUS: {
-			auto target = gen_expr_target(expr->unary.target);
+			auto target = gen_expr_target(expr->target);
 			auto loaded = builder->CreateLoad(target);
 			auto type = expr->type->llvm_type;
 			Value *one;
 
-			if (expr->unary.op == TOKEN_PLUS_PLUS) {
+			if (expr->op == TOKEN_PLUS_PLUS) {
 				one = ConstantInt::get(type, 1);
 			} else {
 				one = ConstantInt::get(type, -1);
@@ -695,7 +697,7 @@ Value *CodeGenerator::gen_unary(Expr *expr) {
 			auto val = builder->CreateNSWAdd(loaded, one);
 			builder->CreateStore(val, target);
 
-			if (expr->unary.ispost) {
+			if (expr->ispost) {
 				return loaded;
 			} else {
 				return val;
@@ -706,24 +708,24 @@ Value *CodeGenerator::gen_unary(Expr *expr) {
     return 0;
 }
 
-Value *CodeGenerator::gen_deref(Expr *expr) {
-    auto target = gen_expr(expr->target);
+Value *CodeGenerator::gen_deref(Deref *expr) {
+    auto target = gen(expr->target);
     return builder->CreateLoad(target);
 }
 
-Value *CodeGenerator::gen_variable(Expr *expr) {
-	return builder->CreateLoad(expr->var->llvm_ref);
+Value *CodeGenerator::gen_variable(Variable *expr) {
+	return builder->CreateLoad(expr->llvm_ref);
 }
 
-Value *CodeGenerator::gen_int_lit(Expr *expr) {
+Value *CodeGenerator::gen_int_lit(IntegerLiteral *expr) {
 	return ConstantInt::get(expr->type->llvm_type, expr->int_value);
 }
 
-Value *CodeGenerator::gen_float_lit(Expr *expr) {
+Value *CodeGenerator::gen_float_lit(FloatLiteral *expr) {
 	return ConstantFP::get(expr->type->llvm_type, expr->float_value);
 }
 
-Value *CodeGenerator::gen_string_lit(Expr *expr) {
+Value *CodeGenerator::gen_string_lit(QStringLiteral *expr) {
     auto it = constant_string_literals.find(expr->string_lit);
 
     if (it != constant_string_literals.end()) {
@@ -735,12 +737,12 @@ Value *CodeGenerator::gen_string_lit(Expr *expr) {
     return ptr;
 }
 
-Value *CodeGenerator::gen_func_call(Expr *expr) {
+Value *CodeGenerator::gen_func_call(FunctionCall *expr) {
     std::vector<Value *> arg_values{};
-    auto target_fn = expr->func_call.target_func_decl->func_def.llvm_ref;
+    auto target_fn = expr->target_func_decl->llvm_ref;
 
-    for (auto arg : *expr->func_call.arguments)
-        arg_values.push_back(gen_expr(arg));
+    for (auto arg : expr->arguments)
+        arg_values.push_back(gen(arg));
 
 	CallInst *call_inst = builder->CreateCall(target_fn, arg_values);
 
@@ -753,8 +755,8 @@ Value *CodeGenerator::gen_func_call(Expr *expr) {
     return call_inst;
 }
 
-Value *CodeGenerator::gen_compare_zero(Expr *expr) {
-    Value *target = gen_expr(expr->target);
+Value *CodeGenerator::gen_compare_zero(CompareZero *expr) {
+    Value *target = gen(expr->target);
 	QType *ty = expr->target->type;
 	Value *zero;
 
@@ -770,11 +772,11 @@ Value *CodeGenerator::gen_compare_zero(Expr *expr) {
     }
 }
 
-Value *CodeGenerator::gen_nil(Expr *expr) {
+Value *CodeGenerator::gen_nil(Nil *expr) {
     return ConstantPointerNull::get((PointerType *) expr->type->llvm_type);
 }
 
-Value *CodeGenerator::gen_new(Expr *expr) {
+Value *CodeGenerator::gen_new(New *expr) {
     Function *malloc_fn = get_builtin("malloc");
 
     Type *target_type = expr->alloc_type->llvm_type;
@@ -784,50 +786,55 @@ Value *CodeGenerator::gen_new(Expr *expr) {
     return builder->CreatePointerCast(mallocd, expr->type->llvm_type);
 }
 
-Value *CodeGenerator::gen_member(Expr *expr) {
+Value *CodeGenerator::gen_member(Member *expr) {
     return builder->CreateLoad(gen_expr_target(expr));
 }
 
-Value *CodeGenerator::gen_indexed(Expr *expr) {
+Value *CodeGenerator::gen_indexed(Indexed *expr) {
 	return builder->CreateLoad(gen_expr_target(expr));
 }
 
 Value *CodeGenerator::gen_expr_target(Expr *expr) {
-    if (expr->kind == VARIABLE) {
-        return expr->var->llvm_ref;
+    ExprKind kind = expr->kind();
+     if (kind == VARIABLE) {
+        auto var = (Variable *) expr;
+        return var->llvm_ref;
     }
 
-    if (expr->kind == DEREF) {
-        auto target = gen_expr_target(expr->target); 
-        auto type = expr->target->type->llvm_type;
+    if (kind == DEREF) {
+        auto deref = (Deref *) expr;
+        auto target = gen_expr_target(deref->target); 
+        auto type = deref->target->type->llvm_type;
 
         return builder->CreateLoad(target);
     }
 
-	if (expr->kind == INDEXED) {
-		auto index = expr->indexed.index;
-		auto target_ty = expr->indexed.target->type;
+	if (kind == INDEXED) {
+		auto ind_expr = (Indexed *) expr;
+		auto index = ind_expr->index;
+		auto target_ty = ind_expr->target->type;
 		if (target_ty->isarray()) {
-			return gen_array_indexed(gen_expr_target(expr->indexed.target), target_ty->data_type->llvm_type, gen_expr(index));
+			return gen_array_indexed(gen_expr_target(ind_expr->target), target_ty->data_type->llvm_type, gen(index));
 		} else if (target_ty->isstring()) {
-			return gen_string_indexed(gen_expr_target(expr->indexed.target), gen_expr(index));
+			return gen_string_indexed(gen_expr_target(ind_expr->target), gen(index));
 		} else {
-			auto target = gen_expr(expr->indexed.target);
+			auto target = gen(ind_expr->target);
 
-			return builder->CreateInBoundsGEP(target, { gen_expr(index) });
+			return builder->CreateInBoundsGEP(target, { gen(index) });
 		}
 	}
 
-    if (expr->kind == MEMBER) {
-        auto target = gen_expr_target(expr->member.target);
-		auto indices = *expr->member.indices;
+    if (kind == MEMBER) {
+	    auto mem_expr = (Member *) expr;
+        auto target = gen_expr_target(mem_expr->target);
+		auto indices = mem_expr->indices;
 
 		for (int i = 0; i < indices.size(); ++i) {
 			auto index = indices[i];
 			auto llvm_zero = ConstantInt::get(s32_ty, 0);
 			auto llvm_index = ConstantInt::get(s32_ty, index);
 
-			if ((*expr->member.dereferences)[i]) {
+			if (mem_expr->dereferences[i]) {
 				target = builder->CreateLoad(target);
 			}
 			target = builder->CreateInBoundsGEP(target, {llvm_zero, llvm_index});
@@ -836,8 +843,9 @@ Value *CodeGenerator::gen_expr_target(Expr *expr) {
 		return target;
     }
 
-	if (expr->kind == CAST) {
-		return gen_expr_target(expr->target);
+	if (kind == CAST) {
+	    auto cast_expr = (Cast *) expr;
+		return gen_expr_target(cast_expr->target);
 	}
 
     /* unreachable */
@@ -859,22 +867,22 @@ Value *CodeGenerator::gen_string_indexed(Value *str, Value *index) {
 	return builder->CreateInBoundsGEP(str_ptr, { index });
 }
 
-Type *CodeGenerator::gen_return_type(std::vector<QType *> *types) {
-    if (types->size() == 1)
-        return (*types)[0]->llvm_type;
+Type *CodeGenerator::gen_return_type(std::vector<QType *> types) {
+    if (types.size() == 1)
+        return types[0]->llvm_type;
 
-	std::vector<Type *> return_types(types->size());
-	for (int i = 0; i < types->size(); i++) {
-		return_types[i] = (*types)[i]->llvm_type;
+	std::vector<Type *> return_types(types.size());
+	for (int i = 0; i < types.size(); i++) {
+		return_types[i] = types[i]->llvm_type;
 	}
 
     return StructType::get(llvm_context, return_types);
 }
 
-Type *CodeGenerator::gen_return_type(std::vector<Expr *> *types) {
-	std::vector<Type *> return_types(types->size());
-	for (int i = 0; i < types->size(); i++) {
-		return_types[i] = (*types)[i]->type->llvm_type;
+Type *CodeGenerator::gen_return_type(std::vector<Expr *> types) {
+	std::vector<Type *> return_types(types.size());
+	for (int i = 0; i < types.size(); i++) {
+		return_types[i] = types[i]->type->llvm_type;
 	}
 
     return StructType::get(llvm_context, return_types);

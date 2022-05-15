@@ -9,7 +9,6 @@
 
 #include "manager.h"
 #include "parser.h"
-#include "alloc.h"
 #include "llvmgen.h"
 #include "x64.h"
 #include "builtin.h"
@@ -41,7 +40,6 @@ static code_gen_func gen_func;
 void manager_init(Options *_options) {
     options = _options;
 
-	arena_init();
 	typer.init(&llvm_code_gen.llvm_context, &messenger);
 	init_builtins(&typer);
 	parser.init(&typer, &messenger);
@@ -50,7 +48,7 @@ void manager_init(Options *_options) {
 		gen_func = x64_gen;
 		x64_init();
 	} else {
-		gen_func =  llvm_gen_stmt;
+		gen_func = llvm_gen_stmt;
 		llvm_code_gen.init(&typer, options);
 	}
 
@@ -216,7 +214,7 @@ void manager_add_additional_file(const char *file_name) {
 }
 
 void llvm_gen_stmt(Stmt *stmt) {
-	llvm_code_gen.gen_stmt(stmt);
+	llvm_code_gen.gen(stmt);
 }
 
 size_t read_entire_file(const char *file_name, const char **contents) {

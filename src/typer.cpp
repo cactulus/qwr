@@ -3,7 +3,6 @@
 #include <llvm/IR/Type.h>
 #include <llvm/IR/DerivedTypes.h>
 
-#include "alloc.h"
 #include "typer.h"
 
 using namespace llvm;
@@ -140,7 +139,7 @@ QType *Typer::make_type(Token *token, QBaseType base, Type *llvm_type) {
 }
 
 QType *Typer::make_type_intern(const std::string &id, QBaseType base, llvm::Type *llvm_type) {
-	auto ty = create_type();
+	auto ty = new QType();
 	ty->base = base;
 	ty->id = id;
 	ty->llvm_type = llvm_type;

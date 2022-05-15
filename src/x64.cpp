@@ -10,7 +10,7 @@ Inspired by the Bitwise "Programming an x64 compiler from scratch" live streams
 #include "parser.h"
 #include "x64.h"
 
-#ifdef _WIN32
+#if _WIN32
 
 #define MAX_CODE_LEN 1024
 
@@ -467,22 +467,25 @@ void x64_init() {
 }
 
 void x64_gen(Stmt *stmt) {
-	switch (stmt->kind) {
-	case BLOCK: {
-		for (auto s : *stmt->stmts) {
+	switch (stmt->kind()) {
+	case COMPOUND: {
+	    auto com = (CompoundStmt *) stmt;
+		for (auto s : com->stmts) {
 			x64_gen(s);
 		}
 	} break;
 	case FUNCTION_DEFINITION:
+	    auto fn = (FunctionDefinition *) stmt;
 		EMIT_R(push, RBP);
 		EMIT_R_R(mov, RBP, RSP);
 
-		for (auto s : *stmt->func_def.body)
+		for (auto s : fn->body)
 			x64_gen(s);
 		break;
 	case RETURN: {
+	    auto retur = (Return *) stmt;
 		Operand operand;
-		gen_expr(&operand, (*stmt->return_values)[0]);
+		gen_expr(&operand, retur->return_values[0]);
 
 		move_operand_reg(&operand, RAX);
 		operand_free_reg(&operand);
@@ -491,9 +494,10 @@ void x64_gen(Stmt *stmt) {
 		EMIT_OP(ret);
 	} break;
 	case VARIABLE_DEFINITION: {
+	    auto var_def = (VariableDefinition *stmt);
 		u32 off = 0x8 + local_var_count++ * 8;
 		Operand operand;
-		gen_expr(&operand, stmt->var_def.value);
+		gen_expr(&operand, var_def->value);
 		if (operand.type == OPERAND_IMMEDIATE) {
 			EMIT_MD1_I(movsx, RBP, -off, operand.val);
 		} else {
@@ -502,23 +506,24 @@ void x64_gen(Stmt *stmt) {
 		}
 		operand_free_reg(&operand);
 
-		variable_offset_map.insert({ std::string(stmt->var_def.var->name), off });
+		variable_offset_map.insert({ std::string(var_def->var->name), off });
 
 	} break;
 	case WHILE: {
+	    auto wh = (While *) stmt;
 		uint8_t *while_statement = code_ptr;
 		Operand cond;
-		gen_expr(&cond, stmt->while_.cond);
+		gen_expr(&cond, wh->cond);
 
 		u8 *after_addr = code_ptr + 2;
 
-		if (stmt->while_.cond->kind = BINARY) {
-			auto op = stmt->while_.cond->bin.op;
+		if (wh->cond->kind = BINARY) {
+			auto op = wh->cond->bin.op;
 		}
 
 		EMIT_C_I(J, 0x4, 0x0);
 		
-		x64_gen(stmt->while_.body);
+		x64_gen(wh->body);
 
 		EMIT_I(jmp, while_statement - code_ptr - 0x4);
 		*after_addr = code_ptr - after_addr - 0x4;
@@ -526,8 +531,9 @@ void x64_gen(Stmt *stmt) {
 		operand_free_reg(&cond);
 	} break;
 	case EXPR_STMT: {
+	    auto expr_stmt = (ExprStmt *) stmt;
 		Operand operand;
-		gen_expr(&operand, stmt->target_expr);
+		gen_expr(&operand, expr_stmt->target_expr);
 	} break;
 	default:
 		assert(0 && "Stmt not implemented yet");
@@ -537,24 +543,27 @@ void x64_gen(Stmt *stmt) {
 void gen_expr(Operand *operand, Expr *expr) {
 	switch (expr->kind) {
 		case INT_LIT: {
+			auto int_lit = (IntegerLiteral *) expr;
 			operand->type = OPERAND_IMMEDIATE;
-			operand->val = expr->int_value;
+			operand->val = int_lit->int_value;
 		} break;
 		case VARIABLE: {
+		    auto var = (Variable *) expr;
 			operand->type = OPERAND_FRAME_OFFSET;
-			operand->offset = variable_offset_map[std::string(expr->var->name)];
+			operand->offset = variable_offset_map[std::string(var->name)];
 		} break;
 		case BINARY: {
+		    auto bin = (Binary *) expr;
 			Operand rhs;
 
-			gen_expr(operand, expr->bin.lhs);
-			gen_expr(&rhs, expr->bin.rhs);
+			gen_expr(operand, bin->lhs);
+			gen_expr(&rhs, bin->rhs);
 
-			if (expr->bin.op == '+') {
+			if (bin->op == '+') {
 				emit_add(operand, &rhs);
-			} else if (expr->bin.op == '-') {
+			} else if (bin->op == '-') {
 				emit_sub(operand, &rhs);
-			} else if (expr->bin.op == TOKEN_ADD_EQ) {
+			} else if (bin->op == TOKEN_ADD_EQ) {
 				u32 off = operand->offset;
 
 				u32 reg = alloc_reg();
@@ -566,7 +575,7 @@ void gen_expr(Operand *operand, Expr *expr) {
 				EMIT_R_MD1(mov, reg, RBP, -off);
 
 				free_reg(reg);
-			} else if (expr->bin.op == TOKEN_SUB_EQ) {
+			} else if (bin->op == TOKEN_SUB_EQ) {
 				u32 off = operand->offset;
 
 				u32 reg = alloc_reg();
@@ -578,7 +587,7 @@ void gen_expr(Operand *operand, Expr *expr) {
 				EMIT_R_MD1(mov, reg, RBP, -off);
 
 				free_reg(reg);
-			} else if (expr->bin.op == '=') {
+			} else if (bin->op == '=') {
 				auto off = operand->offset;
 
 				if (rhs.type == OPERAND_IMMEDIATE) {
@@ -592,7 +601,8 @@ void gen_expr(Operand *operand, Expr *expr) {
 			}
 		} break;
 		case COMPARE_ZERO: {
-			gen_expr(operand, expr->target);
+		    auto cmp = (CompareZero *) expr;
+			gen_expr(operand, cmp->target);
 			if (operand->type == OPERAND_FRAME_OFFSET) {
 				EMIT_MD1_I(cmp, RBP, -operand->offset, 0x0);
 			} else {
@@ -601,9 +611,10 @@ void gen_expr(Operand *operand, Expr *expr) {
 			}
 		} break;
 		case UNARY: {
-			switch (expr->unary.op) {
+		    auto unary = (Unary *) expr;
+			switch (unary->op) {
 				case '&': {
-					gen_expr(operand, expr->unary.target);
+					gen_expr(operand, unary->target);
 
 					Operand result;
 					result.type = OPERAND_REGISTER;
@@ -618,7 +629,7 @@ void gen_expr(Operand *operand, Expr *expr) {
 				case TOKEN_PLUS_PLUS: {
 					auto reg = alloc_reg();
 
-					gen_expr(operand, expr->unary.target);
+					gen_expr(operand, unary->target);
 					auto off = operand->offset;
 					move_operand_reg(operand, reg);
 					EMIT_R_I(add, reg, 0x1);
@@ -629,7 +640,7 @@ void gen_expr(Operand *operand, Expr *expr) {
 				case TOKEN_MINUS_MINUS: {
 					auto reg = alloc_reg();
 
-					gen_expr(operand, expr->unary.target);
+					gen_expr(operand, unary->target);
 					auto off = operand->offset;
 					move_operand_reg(operand, reg);
 					EMIT_R_I(sub, reg, 0x1);
@@ -638,7 +649,7 @@ void gen_expr(Operand *operand, Expr *expr) {
 					free_reg(reg);
 				} break;
 				case '-': {
-					gen_expr(operand, expr->unary.target);
+					gen_expr(operand, unary->target);
 
 					Operand reg_op;
 					operand_alloc_reg(&reg_op);
