@@ -932,11 +932,9 @@ int CodeGenerator::llvm_size_of(Type *type) {
 }
 
 void CodeGenerator::init_module() {
-	InitializeAllTargetInfos();
-	InitializeAllTargets();
-	InitializeAllTargetMCs();
-	InitializeAllAsmParsers();
-	InitializeAllAsmPrinters();
+    InitializeNativeTarget();
+    InitializeNativeTargetAsmParser();
+    InitializeNativeTargetAsmPrinter();
 
     Triple triple(sys::getDefaultTargetTriple());
 
@@ -979,7 +977,7 @@ void CodeGenerator::output(Options *options) {
         optimize();
     }
 
-#if defined _WIN32 || defined __MACH__
+#if defined _WIN32
 	std::error_code std_error;
 	auto out = new ToolOutputFile(options->ll_file, std_error, sys::fs::OF_None);
 	if (!out) {
@@ -1010,13 +1008,14 @@ void CodeGenerator::output(Options *options) {
     pm.run(*llvm_module);
 #endif
 
+    os->flush();
     out->keep();
 }
 
 void CodeGenerator::link(Options *options) {
     std::stringstream cmd;
 
-#if defined _WIN32 || defined __MACH__
+#if defined _WIN32
 	cmd << "clang -o";
     cmd << options->exe_file << " ";
     cmd << options->ll_file << " ";
@@ -1032,9 +1031,15 @@ void CodeGenerator::link(Options *options) {
     std::system(cmd.str().c_str());
     std::remove(options->ll_file);
 #else
-	cmd << "gcc -o ";
+    cmd << "ld -o ";
 	cmd << options->exe_file << " ";
     cmd << options->obj_file;
+
+#ifdef __MACH__
+    cmd << " -syslibroot ";
+    cmd << "`xcrun --show-sdk-path`";
+    cmd << " -lSystem";
+#endif
 
 	for (auto lib : options->libs) {
 	    cmd << " -l" << lib;
@@ -1043,8 +1048,7 @@ void CodeGenerator::link(Options *options) {
 	for (auto linker_flags : options->linker_flags) {
 	    cmd << " " << linker_flags;
     }
-
-    std::cout << cmd.str() << "\n";
+    
     std::system(cmd.str().c_str());
     std::remove(options->obj_file);
 #endif
