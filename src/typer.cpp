@@ -173,8 +173,8 @@ QType *Typer::get(const std::string &id) {
 	return types[id];
 }
 
-QType *Typer::get_array(QType *value_type) {
-	return get("Array_" + value_type->id);
+QType *Typer::get_array(QType *element_type) {
+	return get("Array_" + element_type->id);
 }
 
 bool Typer::has(const std::string &id) {

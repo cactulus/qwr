@@ -147,6 +147,13 @@ Token *Lexer::read_token() {
 
 	if (c == '\0') {
 		t->type = TOKEN_EOF;
+	} else if (c == '#') {
+        eat_char();
+        const char *lexeme;
+        read_xchars(this, &lexeme, is_ident_char);
+
+        t->type = TOKEN_PREPROC;
+        t->lexeme = lexeme;
 	} else if (c == '_' || isalpha(c)) {
 		read_atom_or_keyword(this, t);
 	} else if(c == '0' && peek_char(1) == 'x') {

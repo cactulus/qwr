@@ -40,11 +40,6 @@ builtin qwr_array_resize :: (a *Array, type_size u64) {
 }
 
 builtin qwr_array_free :: (a *Array) {
-	i := 0;
-	while i < a.len {
-		delete a.data;
-		i++;
-	}
-
+	delete a.data;
 	delete a;	
 }

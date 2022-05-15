@@ -2,11 +2,14 @@
 #include <iostream>
 #include <sstream>
 #include <cstring>
+#include <algorithm>
 
 #include "parser.h"
 #include "builtin.h"
 #include "alloc.h"
 #include "manager.h"
+
+static void init_preproc_definitions();
 
 const std::unordered_map<int, int> operator_precedence = {
 	{TOKEN_ADD_EQ, 1},
@@ -35,6 +38,8 @@ const std::unordered_map<int, int> operator_precedence = {
 	{'%', 11},
 };
 
+static std::vector<std::string> preproc_definitions = {};
+
 static Stmt *current_function;
 
 void Parser::init(Typer *_typer, Messenger *_messenger) {
@@ -43,6 +48,8 @@ void Parser::init(Typer *_typer, Messenger *_messenger) {
 
 	scope = new Scope(messenger);
 	has_reached_end = false;
+	
+    init_preproc_definitions();
 }
 
 Stmt *Parser::parse_top_level_stmt() {
@@ -67,10 +74,10 @@ Stmt *Parser::parse_top_level_stmt() {
 
             if (eat_token_if(TOKEN_ENUM)) {
                 parse_enum(tok);
-                return parse_top_level_stmt();
+                return 0;
             } else if (eat_token_if(TOKEN_STRUCT)) {
                 parse_struct(tok);
-                return parse_top_level_stmt();
+                return 0;
             } else {
                 return parse_func_def(tok, 0x0);
             }
@@ -109,7 +116,18 @@ Stmt *Parser::parse_top_level_stmt() {
         eat_token_if(';');
     
         manager_add_library(tok->lexeme);
-        return parse_top_level_stmt();
+        return 0;
+    }
+
+    if (eat_token_if(TOKEN_INCLUDE)) {
+        auto tok = lexer.peek_token();
+        if (!eat_token_if(TOKEN_STRING_LIT)) {
+            messenger->report(tok, "Expected string literal with name of file");
+        }
+        eat_token_if(';');
+    
+        manager_add_src_file(tok->lexeme);
+        return 0;
     }
 
 	if (eat_token_if(TOKEN_TYPEDEF)) {
@@ -122,7 +140,7 @@ Stmt *Parser::parse_top_level_stmt() {
 
 		typer->make_ref_type(tok, ty);
 
-		return parse_top_level_stmt();
+		return 0;
 	}
 
     if (eat_token_if(TOKEN_QWR)) {
@@ -134,7 +152,11 @@ Stmt *Parser::parse_top_level_stmt() {
     
         manager_add_flags(tok->lexeme);
 
-        return parse_top_level_stmt();
+        return 0;
+    }
+
+    if (eat_token_if(TOKEN_PREPROC)) {
+        return parse_preproc(tok, true);
     }
 
     if (tok->type == TOKEN_EOF) {
@@ -173,7 +195,41 @@ Stmt *Parser::parse_stmt() {
 		return parse_delete();
 	}
 
+    if (eat_token_if(TOKEN_PREPROC)) {
+        return parse_preproc(tok, false);
+    }
+
 	return try_parse_atom();
+}
+
+Stmt *Parser::parse_preproc(Token *op_token, bool top_level) {
+    if (strcmp(op_token->lexeme, "if") == 0) {
+        auto arg = lexer.peek_token();
+        if (!eat_token_if(TOKEN_ATOM)) {
+            messenger->report(arg, "Expected identifier");
+        }
+
+        auto begin = preproc_definitions.begin();
+        auto end = preproc_definitions.end();
+        if (std::find(begin, end, arg->lexeme) == end) {
+            if (eat_token_if('{')) {
+                while (!eat_token_if('}'))
+                    lexer.eat_token();
+            } else {
+                while (!eat_token_if(';'))
+                    lexer.eat_token();
+            }
+            return 0;
+        }
+
+        if (top_level) {
+            return parse_top_level_stmt();
+        }
+        return parse_stmt();
+    }
+
+    messenger->report(op_token, "Undefined preprocessor directive");
+    return 0;
 }
 
 void Parser::parse_enum(Token *name) {
@@ -1323,4 +1379,16 @@ Variable *Parser::add_or_get_variable(Token *token, QType *type) {
 	var->type = type;
 	scope->add(token, var);
     return var;
+}
+
+void init_preproc_definitions() {
+#if defined(_WIN32) || defined(_WIN64)
+    preproc_definitions.push_back("windows");
+#elif defined(__APPLE__) || defined(__MACH__)
+    preproc_definitions.push_back("unix");
+    preproc_definitions.push_back("macos");
+#elif defined(__linux__)
+    preproc_definitions.push_back("unix");
+    preproc_definitions.push_back("linux");
+#endif
 }

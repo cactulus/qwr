@@ -110,7 +110,7 @@ Function *CodeGenerator::get_builtin(const char *name) {
 
 Function *CodeGenerator::gen_append_func(std::string name, QType *value_type) {
 	auto ret_type = typer->get("void")->llvm_type;
-	auto array_type = typer->make_pointer(typer->get_array(value_type))->llvm_type;
+	auto array_type = typer->get_array(value_type)->llvm_type;
 	auto value_ptr_type = typer->make_pointer(value_type)->llvm_type;
 	auto u64_ty = typer->get("u64")->llvm_type;
 	auto s32_ty = typer->get("s32")->llvm_type;

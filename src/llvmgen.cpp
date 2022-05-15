@@ -88,6 +88,9 @@ void CodeGenerator::init_debug(const char *src_file) {
 }
 
 void CodeGenerator::gen_stmt(Stmt *stmt) {
+    if (!stmt)
+        return;
+
 	if (debug)
 		emit_location_dbg(stmt);
 
@@ -1077,8 +1080,9 @@ void CodeGenerator::output_call_graph(Options *options) {
         return;
     }
 
+        /*
     raw_pwrite_stream *os = &out->os();
 	callgraph->populateCallGraphNode(callgraph->getOrInsertFunction(current_function));
     callgraph->print(*os);
-    out->keep();
+    out->keep();*/
 }

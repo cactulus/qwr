@@ -16,6 +16,7 @@
 
 typedef void(*code_gen_func)(Stmt *stmt);
 
+static void manager_add_additional_file(const char *file_name);
 static void llvm_gen_stmt(Stmt *stmt);
 static size_t read_entire_file(const char *file_name, const char **contents);
 static const char *get_lib_path();
@@ -27,6 +28,8 @@ static CodeGenerator llvm_code_gen;
 static Messenger messenger;
 static Parser parser;
 static Typer typer;
+
+static std::vector<const char *> parsed_files = {};
 
 static long long parse_time = 0;
 static long long gen_time = 0;
@@ -77,13 +80,18 @@ void manager_run() {
         auto start = TIMER_NOW;
 
         stmt = parser.parse_top_level_stmt();
-        if (parser.has_reached_end) {
-            break;
-        }
 
         auto end = TIMER_NOW;
         auto diff = TIMER_DIFF(start, end);
         parse_time += diff;
+
+        if (parser.has_reached_end) {
+            break;
+        }
+
+        if (!stmt) {
+            continue;
+        }
 
         start = TIMER_NOW;
 
@@ -146,11 +154,35 @@ void manager_add_library(const char *lib_name) {
     strcat(full_lib_path, lib_name);
     strcat(full_lib_path, ".qwr");
 
+    manager_add_additional_file(full_lib_path);
+}
+
+void manager_add_src_file(const char *file_name) {
+    // + 5 = ".qwr" + \0
+    char *base_path = options->base_path;
+    char *full_file_path = new char[strlen(base_path) + strlen(file_name) + 5];
+    strcpy(full_file_path, base_path);
+    strcat(full_file_path, file_name);
+    strcat(full_file_path, ".qwr");
+
+    manager_add_additional_file(full_file_path);
+}
+
+void manager_add_flags(const char *flags) {
+    options->linker_flags.push_back(flags);
+}
+
+void manager_add_additional_file(const char *file_name) {
+    auto end = parsed_files.end();
+    if (std::find(parsed_files.begin(), end, file_name) != end)
+        return;
+
+    parsed_files.push_back(file_name);
     const char *code;
-    auto code_len = read_entire_file(full_lib_path, &code);
+    auto code_len = read_entire_file(file_name, &code);
 
     auto old_file = messenger.current_file;
-	messenger.open_file(full_lib_path, code);
+	messenger.open_file(file_name, code);
     parser.lexer.backup();
     parser.lexer.init(code, code_len);
 
@@ -181,12 +213,6 @@ void manager_add_library(const char *lib_name) {
     messenger.open_file(old_file, "");
     parser.has_reached_end = false;
 	parser.lexer.restore();
-}
-
-void manager_add_flags(const char *flags) {
-#ifndef _WIN32 // TODO (niko) make available on windows?
-    options->linker_flags.push_back(flags);
-#endif
 }
 
 void llvm_gen_stmt(Stmt *stmt) {
@@ -238,3 +264,4 @@ const char *get_lib_path() {
 	return "/usr/local/bin/qwrstd/";
 #endif
 }
+

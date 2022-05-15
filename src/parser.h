@@ -208,6 +208,7 @@ struct Parser {
 	Stmt *parse_top_level_stmt();
 	Stmt *parse_stmt();				
 
+    Stmt *parse_preproc(Token *op_token, bool top_level);
     void parse_enum(Token *name);
     void parse_struct(Token *name);
 	Stmt *parse_func_def(Token *name, u8 flags);

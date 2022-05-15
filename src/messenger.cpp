@@ -27,30 +27,30 @@ void Messenger::error(Token *token) {
 	auto loc = token->location;
 	std::string line = code_lines[loc.line];
 	
-	std::cout << "Error found in line " << (loc.line + 1) << "\n";
-	std::cout << line;
-	std::cout << "\n";
+	std::cerr << "Error found in line " << (loc.line + 1) << "\n";
+	std::cerr << line;
+	std::cerr << "\n";
 	for (int i = 0; i < line.length(); ++i) {
 		if (i >= loc.col_from && i < loc.col_to) {
-			std::cout << "*";
+			std::cerr << "*";
 		} else if (line[i] == '\t') {
-			std::cout << "\t";
+			std::cerr << "\t";
 		} else {
-			std::cout << " ";
+			std::cerr << " ";
 		}
 	}
-	std::cout << "\n";
+	std::cerr << "\n";
 }
 
 void Messenger::report(Token *token, const char *msg) {
 	error(token);
-	std::cout << msg << "\n";
+	std::cerr << msg << "\n";
 	std::exit(0);
 }
 
 void Messenger::report_print_token(Token *token, const char *msg) {
 	error(token);
-	std::cout << msg << " ";
+	std::cerr << msg << " ";
 	token->print();
 	std::exit(0);
 }

@@ -95,7 +95,7 @@ struct Typer {
 
 	QType *get(Token *type_token);
 	QType *get(const std::string &id);
-	QType *get_array(QType *value_type);
+	QType *get_array(QType *element_type);
 
 	bool has(const std::string &id);
 

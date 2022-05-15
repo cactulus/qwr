@@ -4,7 +4,8 @@
 
 #include "manager.h"
 
-char *change_file_extension(const char *filename, const char *extension);
+char *file_change_extension(const char *filename, const char *extension);
+char *file_base_path(const char *filename);
 
 void compile(Options *options) {
 	manager_init(options);
@@ -64,10 +65,11 @@ int main(int argc, char *argv[]) {
             exe_ext = "";
 #endif
             options.src_file = arg;
-            options.ll_file = change_file_extension(options.src_file, ".ll");
-            options.obj_file = change_file_extension(options.src_file, obj_ext);
-            options.exe_file = change_file_extension(options.src_file, exe_ext);
-            options.cgraph_file = change_file_extension(options.src_file, ".callgraph.dot");
+            options.ll_file = file_change_extension(options.src_file, ".ll");
+            options.obj_file = file_change_extension(options.src_file, obj_ext);
+            options.exe_file = file_change_extension(options.src_file, exe_ext);
+            options.cgraph_file = file_change_extension(options.src_file, ".callgraph.dot");
+            options.base_path = file_base_path(options.src_file);
         }
     }
 
@@ -86,7 +88,7 @@ int main(int argc, char *argv[]) {
 	return 0;
 }
 
-char *change_file_extension(const char *filename, const char *extension) {
+char *file_change_extension(const char *filename, const char *extension) {
 	char *new_filename = new char[strlen(filename) + strlen(extension) + 1];
 	strcpy(new_filename, filename);
 	char *dot = strrchr(new_filename, '.');
@@ -95,4 +97,23 @@ char *change_file_extension(const char *filename, const char *extension) {
 	}
 	strcat(new_filename, extension);
 	return new_filename;
+}
+
+char *file_base_path(const char *filename) {
+    int len = strlen(filename);
+    int i;
+    for (i = len - 1; i >= 0; --i) {
+        if (filename[i] == '/') {
+            break;
+        }
+    }
+
+    if (i == 0)
+        return "";
+
+    char *base_path = new char[i + 2];
+    strncpy(base_path, filename, i+1);
+    base_path[i+1] = '\0';
+
+    return base_path;
 }

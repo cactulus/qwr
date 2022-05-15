@@ -6,6 +6,7 @@
 void manager_init(Options *_options);
 void manager_run();
 void manager_add_library(const char *lib_name);
+void manager_add_src_file(const char *file_name);
 void manager_add_flags(const char *flags);
 
 #endif

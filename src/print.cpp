@@ -56,6 +56,11 @@ void Token::print() {
 					  << lexeme
 					  << "'\n";
 		} break;
+		case TOKEN_PREPROC: {
+			std::cout << "PreProc '"
+					  << lexeme
+					  << "'\n";
+		} break;
 		case TOKEN_INT_LIT: {
 			std::cout << "Int " << int_value << "\n";
 		} break;

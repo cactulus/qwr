@@ -29,11 +29,6 @@ void *arena_alloc(size_t size) {
     return p; 
 }
 
-template <class T>
-T *arena_alloc() {
-    return (T *) arena_alloc(sizeof(T));
-}
-
 Token *create_token() {
 	return (Token *) arena_alloc(sizeof(Token));
 }

@@ -1,4 +1,4 @@
-qwr "`pkg-config --libs --static glfw3`";
+#if unix qwr "`pkg-config --libs --static glfw3`";
 
 GLFW_MOD_SHIFT :@ 0x0001;
 GLFW_MOD_CONTROL :@ 0x0002;
