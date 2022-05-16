@@ -22,6 +22,7 @@ struct Options {
     const char *obj_file;
     const char *exe_file;
     const char *cgraph_file;
+	const char *linker;
     char *base_path;
     u8 flags;
 };

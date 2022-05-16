@@ -20,7 +20,6 @@
 
 using namespace llvm;
 
-
 typedef void (CodeGenerator::*gen_stmt_fun) (Stmt *stmt);
 typedef Value *(CodeGenerator::*gen_expr_fun) (Expr *expr);
 
@@ -977,18 +976,6 @@ void CodeGenerator::output(Options *options) {
         optimize();
     }
 
-#if defined _WIN32
-	std::error_code std_error;
-	auto out = new ToolOutputFile(options->ll_file, std_error, sys::fs::OF_None);
-	if (!out) {
-		std::cerr << "Could not open file " << options->ll_file << "\n";
-		return;
-	}
-
-	raw_pwrite_stream *os = &out->os();
-
-	llvm_module->print(*os, nullptr);
-#else
     std::error_code std_error;
     auto out = new ToolOutputFile(options->obj_file, std_error, sys::fs::OF_None);
     if (!out) {
@@ -1000,58 +987,44 @@ void CodeGenerator::output(Options *options) {
 
     legacy::PassManager pm;
 
-    if (target_machine->addPassesToEmitFile(pm, *os, nullptr, CodeGenFileType::CGFT_ObjectFile, false)) {
+    if (target_machine->addPassesToEmitFile(pm, *os, nullptr, TargetMachine::CodeGenFileType::CGFT_ObjectFile, false)) {
         std::cerr << options->obj_file << ": target does not support generation of this file type!\n";
         return;
     }
 
     pm.run(*llvm_module);
-#endif
 
     os->flush();
     out->keep();
+	delete out;
 }
 
 void CodeGenerator::link(Options *options) {
     std::stringstream cmd;
 
+	cmd << options->linker;
+
 #if defined _WIN32
-	cmd << "clang -o";
-    cmd << options->exe_file << " ";
-    cmd << options->ll_file << " ";
-
-	for (auto lib : options->libs) {
-	    cmd << lib << " ";
-    }
-
-	for (auto linker_flags : options->linker_flags) {
-	    cmd << linker_flags << " ";
-    }
-
-    std::system(cmd.str().c_str());
-    std::remove(options->ll_file);
+	cmd << " -out:" << options->exe_file;
+	cmd << " \"" << options->obj_file << "\"";
 #else
-    cmd << "ld -o ";
+	cmd << " -o ";
 	cmd << options->exe_file << " ";
-    cmd << options->obj_file;
-
-#ifdef __MACH__
-    cmd << " -syslibroot ";
-    cmd << "`xcrun --show-sdk-path`";
-    cmd << " -lSystem";
+	cmd << options->obj_file;
 #endif
 
 	for (auto lib : options->libs) {
-	    cmd << " -l" << lib;
-    }
+		cmd << " -l" << lib;
+	}
 
 	for (auto linker_flags : options->linker_flags) {
-	    cmd << " " << linker_flags;
-    }
-    
-    std::system(cmd.str().c_str());
-    std::remove(options->obj_file);
-#endif
+		cmd << " " << linker_flags;
+	}
+
+	std::string command = "cmd /C \"" + cmd.str() + "\"";
+	std::cout << command << "\n";
+	std::system(command.c_str());
+	std::remove(options->obj_file);
 }
 
 void CodeGenerator::optimize() {

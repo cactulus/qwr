@@ -1,11 +1,16 @@
 #include <cassert>
 #include <iostream>
 #include <cstring>
+#include <fstream>
+#include <string>
 
 #include "manager.h"
 
+static void init_linker(Options *options);
+
 char *file_change_extension(const char *filename, const char *extension);
 char *file_base_path(const char *filename);
+static std::string string_replace_all(std::string str, const std::string& from, const std::string& to);
 
 void compile(Options *options) {
 	manager_init(options);
@@ -83,9 +88,58 @@ int main(int argc, char *argv[]) {
         exit(1);
     }
 
+	init_linker(&options);
+
     compile(&options);
 
 	return 0;
+}
+
+void init_linker(Options *options) {
+#ifdef _WIN32
+	std::ifstream conf_file("win_conf.txt");
+	if (!conf_file) {
+		std::cerr << "Not configured.\n" << "Please run install.cmd first!\n";
+		std::exit(0);
+	}
+
+	std::string linker;
+	getline(conf_file, linker);
+	linker = "\"" + string_replace_all(linker, "\\", "\\\\") + "\"";
+
+	std::string stdlib_path;
+	getline(conf_file, stdlib_path);
+	stdlib_path = "\"-libpath:" + string_replace_all(stdlib_path, "\\", "\\\\") + "\"";
+
+	std::string um_path;
+	getline(conf_file, um_path);
+	um_path = string_replace_all(um_path, "\\", "\\\\");
+
+	std::string ucrt_path;
+	getline(conf_file, ucrt_path);
+	ucrt_path = string_replace_all(ucrt_path, "\\", "\\\\");
+
+	options->obj_file = strdup(string_replace_all(options->obj_file, "/", "\\\\").c_str());
+
+	options->linker_flags.push_back("-defaultlib:libcmt");
+	options->linker_flags.push_back("-defaultlib:oldnames");
+	options->linker_flags.push_back(strdup(stdlib_path.c_str()));
+	options->linker_flags.push_back(strdup(um_path.c_str()));
+	options->linker_flags.push_back(strdup(ucrt_path.c_str()));
+	
+	options->linker = strdup(linker.c_str());
+#elif defined(__MACH__)
+	options->linker_flags.push_back("-syslibroot");
+	options->linker_flags.push_back("`xcrun --show-sdk-path`");
+	options->linker_flags.push_back("-lSystem");
+
+	options->linker = "ld";
+
+#else
+
+	options->linker = "ld";
+
+#endif
 }
 
 char *file_change_extension(const char *filename, const char *extension) {
@@ -109,11 +163,20 @@ char *file_base_path(const char *filename) {
     }
 
     if (i == 0)
-        return "";
+        return (char *) "";
 
     char *base_path = new char[i + 2];
     strncpy(base_path, filename, i+1);
     base_path[i+1] = '\0';
 
     return base_path;
+}
+
+std::string string_replace_all(std::string str, const std::string& from, const std::string& to) {
+	size_t start_pos = 0;
+	while ((start_pos = str.find(from, start_pos)) != std::string::npos) {
+		str.replace(start_pos, from.length(), to);
+		start_pos += to.length();
+	}
+	return str;
 }

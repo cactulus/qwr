@@ -474,7 +474,7 @@ void x64_gen(Stmt *stmt) {
 			x64_gen(s);
 		}
 	} break;
-	case FUNCTION_DEFINITION:
+	case FUNCTION_DEFINITION: {
 	    auto fn = (FunctionDefinition *) stmt;
 		EMIT_R(push, RBP);
 		EMIT_R_R(mov, RBP, RSP);
@@ -482,6 +482,7 @@ void x64_gen(Stmt *stmt) {
 		for (auto s : fn->body)
 			x64_gen(s);
 		break;
+	}
 	case RETURN: {
 	    auto retur = (Return *) stmt;
 		Operand operand;
@@ -494,7 +495,7 @@ void x64_gen(Stmt *stmt) {
 		EMIT_OP(ret);
 	} break;
 	case VARIABLE_DEFINITION: {
-	    auto var_def = (VariableDefinition *stmt);
+	    auto var_def = (VariableDefinition *) stmt;
 		u32 off = 0x8 + local_var_count++ * 8;
 		Operand operand;
 		gen_expr(&operand, var_def->value);
@@ -517,8 +518,9 @@ void x64_gen(Stmt *stmt) {
 
 		u8 *after_addr = code_ptr + 2;
 
-		if (wh->cond->kind = BINARY) {
-			auto op = wh->cond->bin.op;
+		if (wh->cond->kind() == BINARY) {
+			auto bin = (Binary *) wh->cond;
+			auto op = bin->op;
 		}
 
 		EMIT_C_I(J, 0x4, 0x0);
@@ -541,7 +543,7 @@ void x64_gen(Stmt *stmt) {
 }
 
 void gen_expr(Operand *operand, Expr *expr) {
-	switch (expr->kind) {
+	switch (expr->kind()) {
 		case INT_LIT: {
 			auto int_lit = (IntegerLiteral *) expr;
 			operand->type = OPERAND_IMMEDIATE;
