@@ -36,6 +36,7 @@ enum QBaseType { /* order is very important */
 	TYPE_STRUCT,
 	TYPE_STRING,
 	TYPE_ARRAY,
+	TYPE_NIL,
 };
 
 struct QType;
@@ -89,6 +90,7 @@ struct Typer {
 	QType *make_pointer(QType *type);
 	QType *make_array(QType *type);
 	QType *make_struct(const char *name, struct_fields_type *fields);
+	QType *make_nil();
 	QType *make_type(Token *token, QBaseType base, llvm::Type *llvm_type);
 	QType *make_type_intern(const std::string &id, QBaseType base, llvm::Type *llvm_type);
 	void make_ref_type(Token *token, QType *ref);

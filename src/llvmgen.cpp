@@ -652,6 +652,9 @@ Value *CodeGenerator::gen_cast(Cast *expr) {
 		return builder->CreateFPToSI(target, to);
 	}
 
+	if ((ft->isstring() && tt->ispointer()) || (ft->ispointer() && tt->isstring())) {
+		return builder->CreatePointerCast(target, to);
+	}
 	llvm_unreachable("Cast not implemented");
 }
 

@@ -750,6 +750,7 @@ Expr *Parser::parse_binary(int prec) {
                 rhs = cast(rhs, lhs_type);
             } else {
                 if (!(lhs_type->ispointer() && rhs_type->isint() && ttype_is_binary(tok_type))) {
+					std::cout << lhs_type->id << " " << rhs_type->id << "\n";
                     messenger->report(tok, "Lhs and Rhs of binary expression are of different types");
                 }
             }
@@ -1110,7 +1111,7 @@ Expr *Parser::parse_primary() {
     }
 
 	if (eat_token_if(TOKEN_NIL)) {
-	    auto expr = new Nil(typer->make_pointer(typer->get("u8")), tok);
+	    auto expr = new Nil(typer->make_nil(), tok);
 	    return expr;
     }
 
@@ -1148,6 +1149,9 @@ FunctionCall *Parser::parse_function_call() {
 }
 
 Expr *Parser::cast(Expr *target, QType *to) {
+	if (typer->compare(target->type, to))
+		return target;
+
     auto expr = new Cast(to, target->location);
     expr->from = target->type;
     expr->to = to;

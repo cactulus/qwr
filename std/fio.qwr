@@ -1,0 +1,31 @@
+extern fopen :: (filename str, mode str) ptr;
+extern fseek :: (stream ptr, offset s64, whence s32);
+extern ftell :: (stream ptr) s64;
+extern fread :: (pointer ptr, size s64, nmemb s64, stream ptr) s64;
+extern fclose :: (stream ptr) s32;
+
+SEEK_SET :@ 0;
+SEEK_CUR :@ 1;
+SEEK_END :@ 2;
+
+read_entire_file :: (file str) str {
+    f := fopen(file, "rb");
+    if (!f)
+        return nil;
+
+    fseek(f, 0, SEEK_END);
+	len := ftell(f);
+	fseek(f, 0, SEEK_SET);
+
+    buffer := malloc(len + 1);
+	if (!fread(buffer, 1, len, f)) {
+		fclose(f);
+		return nil;
+	}
+
+    fclose(f);
+
+	buffer[len] = '\0';
+
+    return buffer as str;
+}

@@ -36,6 +36,7 @@ int main(int argc, char *argv[]) {
 
     Options options = {};
     options.src_file = 0;
+	options.exe_file = 0;
 
     argc--; argv++;
     while (argc--) {
@@ -59,6 +60,10 @@ int main(int argc, char *argv[]) {
             const char *lib = *argv++;
             argc--;
             options.libs.push_back(lib);
+		} else if (strcmp(arg, "-o") == 0) {
+			const char *out_path = *argv++;
+			argc--;
+			options.exe_file = out_path;
         } else {
             const char *obj_ext;
             const char *exe_ext;
@@ -71,11 +76,12 @@ int main(int argc, char *argv[]) {
             exe_ext = "";
 #endif
             options.src_file = arg;
+			options.base_path = file_base_path(options.src_file);
             options.ll_file = file_change_extension(options.src_file, ".ll");
             options.obj_file = file_change_extension(options.src_file, obj_ext);
-            options.exe_file = file_change_extension(options.src_file, exe_ext);
-            options.cgraph_file = file_change_extension(options.src_file, ".callgraph.dot");
-            options.base_path = file_base_path(options.src_file);
+
+			if (!options.exe_file)
+				options.exe_file = file_change_extension(options.src_file, exe_ext);
         }
     }
 

@@ -129,6 +129,15 @@ QType *Typer::make_struct(const char *name, struct_fields_type *fields) {
     return ty;
 }
 
+QType *Typer::make_nil() {
+	auto ty = new QType();
+	ty->base = TYPE_NIL;
+	ty->id = "nil";
+	ty->llvm_type = 0;
+
+	return ty;
+}
+
 QType *Typer::make_type(Token *token, QBaseType base, Type *llvm_type) {
 	auto sname = std::string(token->lexeme);
 	if (types.find(sname) != types.end()) {
@@ -191,6 +200,12 @@ bool Typer::can_convert_implicit(QType *from, QType *to) {
 	if (from->isint() && to->isint())
 		return true;
 
+	if (from->ischar() && to->isint())
+		return true;
+	
+	if (from->isint() && to->ischar())
+		return true;
+
 	if (from->isint() && to->isbool())
 		return true;
 
@@ -207,6 +222,12 @@ bool Typer::can_convert_explicit(QType *from, QType *to) {
 	bool from_is_primitive = (from->base >= TYPE_INT8) && (from->base <= TYPE_CHAR);
 	bool to_is_primitive = (to->base >= TYPE_INT8) && (to->base <= TYPE_CHAR);
 
+	if (from->isstring() && to->ispointer() && to->element_type->base == TYPE_UINT8)
+		return true;
+
+	if (to->isstring() && from->ispointer() && from->element_type->base == TYPE_UINT8)
+		return true;
+
 	return from_is_primitive && to_is_primitive;
 }
 
@@ -216,6 +237,16 @@ bool Typer::compare(QType *type1, QType *type2) {
 
     if (b1 == TYPE_POINTER && b2 == TYPE_POINTER)
         return true;
+
+	if (b1 == TYPE_NIL) {
+		*type1 = *type2;
+		return true;
+	}
+
+	if (b2 == TYPE_NIL) {
+		*type2 = *type1;
+		return true;
+	}
 
     return b1 == b2;
 }

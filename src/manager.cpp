@@ -4,14 +4,14 @@
 #include <iostream>
 #include <sstream>
 
-#define TIMER_NOW std::chrono::steady_clock::now()
-#define TIMER_DIFF(a, b) std::chrono::duration_cast<std::chrono::microseconds>(b - a).count()
-
 #include "manager.h"
 #include "parser.h"
 #include "llvmgen.h"
 #include "x64.h"
 #include "builtin.h"
+
+#define TIMER_NOW std::chrono::steady_clock::now()
+#define TIMER_DIFF(a, b) std::chrono::duration_cast<std::chrono::microseconds>(b - a).count()
 
 typedef void(*code_gen_func)(Stmt *stmt);
 
@@ -171,11 +171,12 @@ void manager_add_flags(const char *flags) {
 }
 
 void manager_add_additional_file(const char *file_name) {
-    auto end = parsed_files.end();
-    if (std::find(parsed_files.begin(), end, file_name) != end)
-        return;
+	for (auto parsed_file : parsed_files)
+		if (strcmp(parsed_file, file_name) == 0)
+			return;
 
     parsed_files.push_back(file_name);
+
     const char *code;
     auto code_len = read_entire_file(file_name, &code);
 
