@@ -18,7 +18,7 @@ typedef void(*code_gen_func)(Stmt *stmt);
 static void manager_add_additional_file(const char *file_name);
 static void llvm_gen_stmt(Stmt *stmt);
 static size_t read_entire_file(const char *file_name, const char **contents);
-static const char *get_lib_path();
+const char *get_lib_path();
 
 const char *LIB_PATH;
 
@@ -262,4 +262,3 @@ const char *get_lib_path() {
 	return "/usr/local/bin/qwrstd/";
 #endif
 }
-

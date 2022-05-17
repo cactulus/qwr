@@ -994,18 +994,45 @@ void CodeGenerator::output(Options *options) {
 }
 
 void CodeGenerator::link(Options *options) {
+#ifdef _WIN32
+	link_windows(options);
+#else
+	link_unix(options);
+#endif
+}
+
+void CodeGenerator::link_windows(Options *options) {
+	std::stringstream cmd;
+
+	cmd << options->linker;
+	cmd << " -out:" << options->exe_file;
+	cmd << " \"" << options->obj_file << "\"";
+
+	for (auto lib : options->libs) {
+		cmd << " " << lib;
+	}
+
+	for (auto linker_flags : options->linker_flags) {
+		cmd << " " << linker_flags;
+	}
+
+	std::string command = "cmd /C \"" + cmd.str() + "\"";
+	std::system(command.c_str());
+	std::remove(options->obj_file);
+
+	if (options->flags & VERBOSE) {
+		std::cout << command << "\n";
+	}
+}
+
+void CodeGenerator::link_unix(Options *options) {
     std::stringstream cmd;
 
 	cmd << options->linker;
 
-#if defined _WIN32
-	cmd << " -out:" << options->exe_file;
-	cmd << " \"" << options->obj_file << "\"";
-#else
 	cmd << " -o ";
 	cmd << options->exe_file << " ";
 	cmd << options->obj_file;
-#endif
 
 	for (auto lib : options->libs) {
 		cmd << " -l" << lib;
@@ -1015,11 +1042,7 @@ void CodeGenerator::link(Options *options) {
 		cmd << " " << linker_flags;
 	}
 
-#ifdef _WIN32
-	std::string command = "cmd /C \"" + cmd.str() + "\"";
-#else
 	std::string command = cmd.str();
-#endif
 	std::system(command.c_str());
 	std::remove(options->obj_file);
 

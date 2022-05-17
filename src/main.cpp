@@ -12,6 +12,8 @@ char *file_change_extension(const char *filename, const char *extension);
 char *file_base_path(const char *filename);
 static std::string string_replace_all(std::string str, const std::string& from, const std::string& to);
 
+const char *get_win_conf_path();
+
 void compile(Options *options) {
 	manager_init(options);
 
@@ -96,7 +98,7 @@ int main(int argc, char *argv[]) {
 
 void init_linker(Options *options) {
 #ifdef _WIN32
-	std::ifstream conf_file("win_conf.txt");
+	std::ifstream conf_file(get_win_conf_path());
 	if (!conf_file) {
 		std::cerr << "Not configured.\n" << "Please run install.cmd first!\n";
 		std::exit(0);
@@ -178,4 +180,17 @@ std::string string_replace_all(std::string str, const std::string& from, const s
 		start_pos += to.length();
 	}
 	return str;
+}
+
+const char *get_win_conf_path() {
+	char *local_appdata;
+	_dupenv_s(&local_appdata, 0, "LOCALAPPDATA");
+
+	const char *win_conf_path = "\\qwr\\win_conf.txt";
+
+	char *path = new char[strlen(local_appdata) + strlen(win_conf_path)];
+	strcpy(path, local_appdata);
+	strcat(path, win_conf_path);
+
+	return path;
 }

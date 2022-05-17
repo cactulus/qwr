@@ -77,6 +77,8 @@ struct CodeGenerator {
 	void init_types();
 	void output(Options *options);
 	void link(Options *options);
+	void link_windows(Options *options);
+	void link_unix(Options *options);
 	void optimize();
 	void dump(Options *options);
 };

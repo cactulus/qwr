@@ -19,7 +19,7 @@ for /f "delims=" %%a in ('dir "%WIN_KIT_BASE%" /AD /B') do set WIN_KIT_VERSION=%
 SET UM_LIB="-libpath:%WIN_KIT_BASE%%WIN_KIT_VERSION%\um\x64"
 SET UCRT_LIB="-libpath:%WIN_KIT_BASE%%WIN_KIT_VERSION%\ucrt\x64"
 
-echo %LINKER_PATH%> win_conf.txt
-echo %LIB_PATH%>> win_conf.txt
-echo %UM_LIB%>> win_conf.txt
-echo %UCRT_LIB%>> win_conf.txt
+echo %LINKER_PATH%> %LOCALAPPDATA%\qwr\win_conf.txt
+echo %LIB_PATH%>> %LOCALAPPDATA%\qwr\win_conf.txt
+echo %UM_LIB%>> %LOCALAPPDATA%\qwr\win_conf.txt
+echo %UCRT_LIB%>> %LOCALAPPDATA%\qwr\win_conf.txt
