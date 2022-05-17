@@ -1,3 +1,6 @@
+#if linux qwr "-lGl";
+#if macos qwr "-framework OpenGL";
+
 typedef GLboolean bool;
 typedef GLbitfield u32;
 typedef GLenum u32;

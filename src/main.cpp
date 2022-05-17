@@ -189,6 +189,7 @@ std::string string_replace_all(std::string str, const std::string& from, const s
 }
 
 const char *get_win_conf_path() {
+#ifdef _WIN32
 	char *local_appdata;
 	_dupenv_s(&local_appdata, 0, "LOCALAPPDATA");
 
@@ -199,4 +200,7 @@ const char *get_win_conf_path() {
 	strcat(path, win_conf_path);
 
 	return path;
+#else
+    return "";
+#endif
 }
