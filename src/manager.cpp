@@ -126,23 +126,23 @@ void manager_run() {
 		end = TIMER_NOW;
 		diff = TIMER_DIFF(start, end);
 		link_time = diff;
-
-		llvm_code_gen.output_call_graph(options);
 	}
 
     auto total_end = std::chrono::steady_clock::now();
     auto total_time = TIMER_DIFF(total_start, total_end);
 
-    std::cout << "Program LOC: " << loc << "\n";
-    std::cout << "Compilation: " << (total_time / 1000) << " ms\n";
-	std::cout << "Parsing: " << (parse_time / 1000) << " ms\n";
+    if (options->flags & VERBOSE) {
+        std::cout << "Program LOC: " << loc << "\n";
+        std::cout << "Compilation: " << (total_time / 1000) << " ms\n";
+        std::cout << "Parsing: " << (parse_time / 1000) << " ms\n";
 
-	if (options->flags & X64_BACKEND) {
-		std::cout << "x64 backend: " << (gen_time / 1000) << " ms\n";
-	} else {
-		std::cout << "LLVM backend: " << (gen_time / 1000) << " ms\n";
-	}
-	std::cout << "Linking: " << (link_time / 1000) << " ms\n";
+        if (options->flags & X64_BACKEND) {
+            std::cout << "x64 backend: " << (gen_time / 1000) << " ms\n";
+        } else {
+            std::cout << "LLVM backend: " << (gen_time / 1000) << " ms\n";
+        }
+        std::cout << "Linking: " << (link_time / 1000) << " ms\n";
+    }
 }
 
 void manager_add_library(const char *lib_name) {

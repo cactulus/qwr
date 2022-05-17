@@ -63,15 +63,9 @@ static Type *u64_ty;
 void CodeGenerator::init(Typer *_typer, Options * _options) {
 	typer = _typer;
 	debug = _options->flags & DEBUG;
-	gen_callgraph = false;
 
 	llvm_module = new Module("test.ll", llvm_context);
 	builder = new IRBuilder<>(llvm_context);
-
-	if (_options->flags & CALL_GRAPH) {
-		gen_callgraph = true;
-		callgraph = new CallGraph(*llvm_module);
-	}
 
     init_module();
 	init_types();
@@ -745,12 +739,6 @@ Value *CodeGenerator::gen_func_call(FunctionCall *expr) {
 
 	CallInst *call_inst = builder->CreateCall(target_fn, arg_values);
 
-	if (gen_callgraph) {
-		auto cg_node = callgraph->getOrInsertFunction(current_function);
-		auto target_node = callgraph->getOrInsertFunction(target_fn);
-		cg_node->addCalledFunction(call_inst, target_node);
-	}
-
     return call_inst;
 }
 
@@ -987,7 +975,13 @@ void CodeGenerator::output(Options *options) {
 
     legacy::PassManager pm;
 
-    if (target_machine->addPassesToEmitFile(pm, *os, nullptr, TargetMachine::CodeGenFileType::CGFT_ObjectFile, false)) {
+
+#ifdef _WIN32
+    auto file_type = TargetMachine::CodeGenFileType::CGFT_ObjectFile;
+#else
+    auto file_type = CodeGenFileType::CGFT_ObjectFile;
+#endif
+    if (target_machine->addPassesToEmitFile(pm, *os, nullptr, file_type, false)) {
         std::cerr << options->obj_file << ": target does not support generation of this file type!\n";
         return;
     }
@@ -1021,10 +1015,17 @@ void CodeGenerator::link(Options *options) {
 		cmd << " " << linker_flags;
 	}
 
+#ifdef _WIN32
 	std::string command = "cmd /C \"" + cmd.str() + "\"";
-	std::cout << command << "\n";
+#else
+	std::string command = cmd.str();
+#endif
 	std::system(command.c_str());
 	std::remove(options->obj_file);
+
+	if (options->flags & VERBOSE) {
+	    std::cout << command << "\n";
+    }
 }
 
 void CodeGenerator::optimize() {
@@ -1051,22 +1052,4 @@ void CodeGenerator::dump(Options *options) {
     raw_pwrite_stream *os = &out->os();
     llvm_module->print(*os, nullptr);
     out->keep();
-}
-
-void CodeGenerator::output_call_graph(Options *options) {
-	if (!gen_callgraph)
-		return;
-
-    std::error_code std_error;
-    auto out = new ToolOutputFile(options->cgraph_file, std_error, sys::fs::OF_None);
-	    if (!out) {
-        std::cerr << "Could not open file " << options->cgraph_file << "\n";
-        return;
-    }
-
-        /*
-    raw_pwrite_stream *os = &out->os();
-	callgraph->populateCallGraphNode(callgraph->getOrInsertFunction(current_function));
-    callgraph->print(*os);
-    out->keep();*/
 }

@@ -25,9 +25,6 @@ struct CodeGenerator {
 	std::vector<llvm::DIScope *> dbg_scopes;
 	bool debug;
 
-	llvm::CallGraph *callgraph;
-	bool gen_callgraph;
-
 	void init(Typer *_typer, Options *_options);
 	void init_debug(const char *src_file);
 
@@ -82,7 +79,6 @@ struct CodeGenerator {
 	void link(Options *options);
 	void optimize();
 	void dump(Options *options);
-	void output_call_graph(Options *options);
 };
 
 #endif

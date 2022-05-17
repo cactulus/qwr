@@ -12,7 +12,7 @@ const u8 DEBUG = 0x4;
 const u8 PRINT_LLVM = 0x8;
 const u8 X64_BACKEND = 0x10;
 const u8 PRINT_AST = 0x20;
-const u8 CALL_GRAPH = 0x40;
+const u8 VERBOSE = 0x40;
 
 struct Options {
     std::vector<const char *> linker_flags;

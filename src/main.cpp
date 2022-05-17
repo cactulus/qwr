@@ -23,13 +23,12 @@ int main(int argc, char *argv[]) {
         std::cout << "usage: qwr <FILE>\n";
         std::cout << "\t -c\t\tCompile only\n";
         std::cout << "\t-release\tRelease build\n";
-		std::cout << "\t-debug\tDebug build\n";
-		std::cout << "\t-l\tLinker flags\n";
+		std::cout << "\t-debug\t\tDebug build\n";
+		std::cout << "\t-l\t\tLinker flags\n";
 		std::cout << "\t-print-ir\tPrint LLVM IR\n";
-		std::cout << "\t-x64\tUse x64 backend\n";
-		std::cout << "\t-print-tokens\tPrint tokens\n";
+		std::cout << "\t-x64\t\tUse x64 backend\n";
 		std::cout << "\t-print-ast\tPrint AST\n";
-		std::cout << "\t-callgraph\tOutput callgraph\n";
+		std::cout << "\t-v\t\tVerbose\n";
         return 0;
     }
 
@@ -52,8 +51,8 @@ int main(int argc, char *argv[]) {
 			options.flags |= X64_BACKEND;
 		} else if (strcmp(arg, "-print-ast") == 0) {
 			options.flags |= PRINT_AST;
-		} else if (strcmp(arg, "-callgraph") == 0) {
-			options.flags |= CALL_GRAPH;
+		} else if (strcmp(arg, "-v") == 0) {
+			options.flags |= VERBOSE;
         } else if (strcmp(arg, "-l") == 0) {
             const char *lib = *argv++;
             argc--;
