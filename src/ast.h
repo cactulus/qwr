@@ -30,6 +30,7 @@ enum ExprKind {
     NEW,
     MEMBER,
 	INDEXED,
+	SIZEOF,
 };
 
 struct Expr {
@@ -61,12 +62,16 @@ struct Binary : Expr {
     }
 };
 
+struct Member;
 struct Variable : Expr {
     using Expr::Expr;
 
 	const char *name;
 	llvm::Value *llvm_ref;
-	bool is_const;
+	u8 flags = 0;
+
+    unsigned int proxy_index;
+    Member *proxy_member;
 
     virtual ExprKind kind() override {
         return VARIABLE;
@@ -221,9 +226,22 @@ struct Nil : Expr {
     }
 };
 
+struct SizeOf : Expr {
+    using Expr::Expr;
+
+    QType *target_type;
+
+    virtual ExprKind kind() override {
+        return SIZEOF;
+    }
+};
+
 const u8 VAR_CONST = 0x1;
 const u8 VAR_GLOBAL = 0x2;
 const u8 VAR_MULTIPLE = 0x4;
+
+const u8 VAR_PROXY_ENUM = 0x2;
+const u8 VAR_PROXY_STRUCT = 0x4;
 
 const u8 FUNCTION_EXTERN = 0x1;
 const u8 FUNCTION_BUILTIN = 0x2;

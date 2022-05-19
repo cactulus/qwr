@@ -13,7 +13,7 @@ typedef GLclampf f32;
 typedef GLfloat f32;
 typedef GLclampx s32;
 typedef GLintptr *s32;
-typedef GLsizeiptr *u64;
+typedef GLsizeiptr u64;
 typedef GLvoid u8;
  
 GL_DEPTH_BUFFER_BIT :@ 0x00000100;
@@ -361,9 +361,13 @@ GL_POINT_SIZE_ARRAY_BUFFER_BINDING_OES :@ 0x8B9F;
 GL_POINT_SPRITE_OES :@ 0x8861;
 GL_COORD_REPLACE_OES :@ 0x8862;
 
+GL_FALSE :@ 0;
+GL_TRUE :@ 1;
 GL_COMPILE_STATUS :@ 0x8B81;
 GL_VERTEX_SHADER :@ 0x8B31;
 GL_FRAGMENT_SHADER :@ 0x8B30;
+GL_UNSIGNED_INT :@ 0x1405;
+GL_INFO_LOG_LENGTH :@ 0x8B84;
 
 extern glAlphaFunc :: (func GLenum, ref GLclampf);
 extern glClearColor :: (red GLclampf, green GLclampf, blue GLclampf, alpha GLclampf);
@@ -522,3 +526,14 @@ extern glShaderSource :: (shader GLuint, count GLsizei, string *str, length *GLi
 extern glCompileShader :: (shader GLuint);
 extern glGetShaderiv :: (shader GLuint, pname GLenum, params *GLint);
 extern glLinkProgram :: (program GLuint);
+extern glDrawElements :: (mode GLenum, count GLsizei, type GLenum, indices ptr);
+extern glVertexAttribPointer :: (index GLuint, size GLint, type GLenum, normalized GLboolean, stride GLsizei, pointer ptr);
+extern glBindVertexArray :: (array GLuint);
+extern glGenBuffers :: (n GLsizei, buffers *GLuint);
+extern glBindBuffer :: (target GLenum, buffer GLuint);
+extern glBufferData :: (target GLenum, size GLsizeiptr, data ptr, usage GLenum);
+extern glGenVertexArrays :: (n GLsizei, arrays *GLuint);
+extern glEnableVertexAttribArray :: (index GLuint);
+extern glDisableVertexAttribArray :: (index GLuint);
+extern glGetShaderiv :: (shader GLuint, pname GLenum params *GLint);
+extern glGetShaderInfoLog :: (shader GLuint, max_length GLsizei, length GLsizei, info_log str);

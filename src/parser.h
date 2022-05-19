@@ -19,6 +19,7 @@ struct Scope {
 	Scope(Messenger *_messenger, Scope *_parent=NULL);
 
 	void add(Token *token, Variable *var);
+	void add_proxy(Token *token, Variable *var);
 	void add_replace(Variable *var);
 	Variable *find(Token *token);
 	Variable *find_null(const char *name);
@@ -46,6 +47,7 @@ struct Parser {
     Stmt *parse_preproc(Token *op_token, bool top_level);
     void parse_enum(Token *name);
     void parse_struct(Token *name);
+	void parse_using();
 	Stmt *parse_func_def(Token *name, u8 flags);
 	Stmt *parse_extern_func_def(Token *name);
 

@@ -194,16 +194,14 @@ bool Typer::can_convert_implicit(QType *from, QType *to) {
     if (compare(from, to))
         return true;
 
+	if (from->ispointer() && to->ispointer()) {
+	    return true;
+    }
+
 	if (from->isfloat() && to->isfloat())
 		return true;
 
 	if (from->isint() && to->isint())
-		return true;
-
-	if (from->ischar() && to->isint())
-		return true;
-	
-	if (from->isint() && to->ischar())
 		return true;
 
 	if (from->isint() && to->isbool())
@@ -228,6 +226,12 @@ bool Typer::can_convert_explicit(QType *from, QType *to) {
 	if (to->isstring() && from->ispointer() && from->element_type->base == TYPE_UINT8)
 		return true;
 
+	if (from->ischar() && to->isint())
+		return true;
+	
+	if (from->isint() && to->ischar())
+		return true;
+
 	return from_is_primitive && to_is_primitive;
 }
 
@@ -235,8 +239,9 @@ bool Typer::compare(QType *type1, QType *type2) {
     int b1 = type1->base;
     int b2 = type2->base;
 
-    if (b1 == TYPE_POINTER && b2 == TYPE_POINTER)
-        return true;
+    if (b1 == TYPE_POINTER && b2 == TYPE_POINTER) {
+        return compare(type1->element_type, type2->element_type);
+    }
 
 	if (b1 == TYPE_NIL) {
 		*type1 = *type2;

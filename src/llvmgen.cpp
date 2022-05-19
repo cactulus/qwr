@@ -51,6 +51,7 @@ const std::unordered_map<ExprKind, gen_expr_fun> expr_gen_funs = {
 	{NEW, (gen_expr_fun) &CodeGenerator::gen_new},
 	{MEMBER, (gen_expr_fun) &CodeGenerator::gen_member},
 	{INDEXED, (gen_expr_fun) &CodeGenerator::gen_indexed},
+	{SIZEOF, (gen_expr_fun) &CodeGenerator::gen_sizeof},
 };
 
 std::unordered_map<std::string, Value *> constant_string_literals = {};
@@ -661,8 +662,7 @@ Value *CodeGenerator::gen_cast(Cast *expr) {
 Value *CodeGenerator::gen_unary(Unary *expr) {
     switch (expr->op) {
         case '&': {
-            auto var = (Variable *) expr->target;
-            return var->llvm_ref;
+            return gen_expr_target(expr->target);
         } break;
         case '!': {
             auto target = gen(expr->target);
@@ -710,6 +710,12 @@ Value *CodeGenerator::gen_deref(Deref *expr) {
 }
 
 Value *CodeGenerator::gen_variable(Variable *expr) {
+    if (expr->flags & VAR_PROXY_ENUM) {
+        return ConstantInt::get(expr->type->llvm_type, expr->proxy_index);
+    }
+    if (expr->flags & VAR_PROXY_STRUCT) {
+        return gen_member(expr->proxy_member);
+    }
 	return builder->CreateLoad(expr->llvm_ref);
 }
 
@@ -784,10 +790,19 @@ Value *CodeGenerator::gen_indexed(Indexed *expr) {
 	return builder->CreateLoad(gen_expr_target(expr));
 }
 
+Value *CodeGenerator::gen_sizeof(SizeOf *expr) {
+    auto ty = expr->type->llvm_type;
+    auto size = llvm_size_of(expr->target_type->llvm_type);
+    return ConstantInt::get(ty, size);
+}
+
 Value *CodeGenerator::gen_expr_target(Expr *expr) {
     ExprKind kind = expr->kind();
-     if (kind == VARIABLE) {
+    if (kind == VARIABLE) {
         auto var = (Variable *) expr;
+        if (var->flags & VAR_PROXY_STRUCT) {
+            return gen_expr_target(var->proxy_member);
+        }
         return var->llvm_ref;
     }
 

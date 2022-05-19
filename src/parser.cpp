@@ -198,6 +198,11 @@ Stmt *Parser::parse_stmt() {
         return parse_preproc(tok, false);
     }
 
+    if (eat_token_if(TOKEN_USING)) {
+        parse_using();
+        return 0;
+    }
+
 	return try_parse_atom();
 }
 
@@ -289,6 +294,61 @@ void Parser::parse_struct(Token *name) {
     }
 
     typer->make_struct(name->lexeme, fields);
+}
+
+void Parser::parse_using() {
+    auto tok = lexer.peek_token();
+         
+    if (typer->has(tok->lexeme) && typer->get(tok->lexeme)->isenum()) {
+        lexer.eat_token();
+        
+        auto enum_type = typer->get(tok->lexeme);
+        auto categories = *enum_type->categories;
+        auto indices = *enum_type->indices;
+        for (int i = 0; i < categories.size(); ++i) {
+            auto var = new Variable(typer->get("u64"), tok);
+            var->flags |= VAR_PROXY_ENUM;
+            var->name = categories[i];
+            var->proxy_index = indices[i];
+
+            scope->add_proxy(tok, var);
+        }
+    } else {
+        auto var_expr = parse_expr();
+        auto st_ty = var_expr->type; 
+
+        if (var_expr->kind() != VARIABLE) {
+            messenger->report(tok, "Illegal target for using");
+        }
+        
+        bool dereference = false;
+        if (st_ty->ispointer() && st_ty->element_type->isstruct()) {
+            st_ty = st_ty->element_type;
+            dereference = true;
+        } else if (!st_ty->isstruct()) {
+            messenger->report(tok, "Using only works on enum types and variables of struct type!");
+        }
+
+        int index = 0;
+        for (auto field : *st_ty->fields) {
+            auto member_name = field.first;
+            auto member_type = field.second;
+            auto member = new Member(member_type, tok);
+            member->target = var_expr;
+            member->indices.push_back(index);
+            member->dereferences.push_back(dereference);
+
+            auto var = new Variable(member_type, tok);
+            var->flags |= VAR_PROXY_STRUCT;
+            var->name = member_name;
+            var->proxy_member = member;
+            
+            scope->add_proxy(tok, var);
+            index++;
+        }
+    }
+
+    eat_semicolon();
 }
 
 Stmt *Parser::parse_func_def(Token *name, u8 flags) {
@@ -401,7 +461,7 @@ Stmt *Parser::parse_variable_definition_type(Token *name_token, u8 flags) {
         auto stmt = new VariableDefinition(name_token);
         stmt->var = new Variable(type, name_token);
         stmt->var->name = name_token->lexeme;
-        stmt->var->is_const = flags & VAR_CONST;
+        stmt->var->flags |= flags & VAR_CONST;
         stmt->value = 0;
         stmt->flags = flags;
 
@@ -438,7 +498,7 @@ QType *Parser::parse_variable_definition_base(Token *name_token, u8 flags, Varia
 
 	stmt->var = new Variable(val_type, name_token);
 	stmt->var->name = name_token->lexeme;
-	stmt->var->is_const = flags & VAR_CONST;
+    stmt->var->flags |= flags & VAR_CONST;
 	stmt->value = val_expr;
     stmt->flags = flags;
 
@@ -640,7 +700,7 @@ Stmt *Parser::parse_delete() {
         messenger->report(tok, "Can't delete non-pointer");
     }
     
-    eat_token_if(';');
+    eat_semicolon();
 
     return stmt;
 }
@@ -728,7 +788,7 @@ Expr *Parser::parse_binary(int prec) {
             }
             if (lhs->kind() == VARIABLE) {
                 auto lhs_var = (Variable *) lhs;
-                if (lhs_var->is_const) {
+                if (lhs_var->flags & VAR_CONST) {
                     messenger->report(tok, "Can't assign value to constant variable");
                 }
             }
@@ -799,25 +859,6 @@ Expr *Parser::parse_postfix() {
 		expr->ispost = true;
 		return expr;
 	}
-
-	if (eat_token_if('[')) {
-		if (!target->type->ispointer() && !target->type->isarray() && !target->type->isstring()) {
-			messenger->report(tok, "This type can't be indexed");
-		}
-
-		auto index = parse_expr();
-		eat_token_if(']');
-
-		if (!index->type->isint()) {
-			messenger->report(tok, "Index has to be of integer type");
-		}
-
-		auto indexed = new Indexed(target->type->element_type, tok);
-		indexed->index = index;
-		indexed->target = target;
-
-		return indexed;
-	}
 	
 	return target;
 }
@@ -882,7 +923,9 @@ Expr *Parser::parse_unary() {
         auto target = parse_primary();
         auto target_kind = target->kind();
 
-        if (target_kind != VARIABLE) {
+        if (target_kind != VARIABLE &&
+            target_kind != MEMBER &&
+            target_kind != INDEXED) {
             messenger->report(tok, "Can't reference non variable");
         }
 
@@ -1034,7 +1077,7 @@ Expr *Parser::parse_primary() {
             auto categories = *ty->categories;
             for (int i = 0; i < categories.size(); ++i) {
                 if (strcmp(categories[i], category->lexeme) == 0) {
-                    auto expr = new IntegerLiteral(typer->get("s32"), tok);
+                    auto expr = new IntegerLiteral(typer->get("u64"), tok);
                     expr->int_value = (*ty->indices)[i];
                     return expr;
                 }
@@ -1043,7 +1086,28 @@ Expr *Parser::parse_primary() {
             messenger->report(category, "Value not found in enum");
         }
 
-		return scope->find(tok);
+		auto target = scope->find(tok);
+
+        if (eat_token_if('[')) {
+            if (!target->type->ispointer() && !target->type->isarray() && !target->type->isstring()) {
+                messenger->report(tok, "This type can't be indexed");
+            }
+
+            auto index = parse_expr();
+            eat_token_if(']');
+
+            if (!index->type->isint()) {
+                messenger->report(tok, "Index has to be of integer type");
+            }
+
+            auto indexed = new Indexed(target->type->element_type, tok);
+            indexed->index = index;
+            indexed->target = target;
+
+            return indexed;
+        }
+
+        return target;
 	}
 
 	if (eat_token_if('{')) {
@@ -1113,6 +1177,12 @@ Expr *Parser::parse_primary() {
 	if (eat_token_if(TOKEN_NIL)) {
 	    auto expr = new Nil(typer->make_nil(), tok);
 	    return expr;
+    }
+
+    if (eat_token_if(TOKEN_SIZEOF)) {
+        auto expr = new SizeOf(typer->get("u64"), tok);
+        expr->target_type = parse_type();
+        return expr;
     }
 
 	messenger->report_print_token(tok, "Unexpected token");
@@ -1191,7 +1261,11 @@ Expr *Parser::make_compare_strings(Expr *lhs, Expr *rhs, TokenType op) {
 
 bool Parser::expr_is_targatable(Expr *expr) {
     ExprKind kind = expr->kind();
-    return kind == VARIABLE || kind == DEREF || kind == MEMBER || kind == INDEXED;
+    if (kind == VARIABLE) {
+        auto var = (Variable *) expr;
+        return !(var->flags & VAR_PROXY_ENUM);
+    }
+    return kind == DEREF || kind == MEMBER || kind == INDEXED;
 }	
 
 QType *Parser::parse_type() {
@@ -1273,6 +1347,14 @@ void Scope::add(Token *token, Variable *var) {
 	auto sname = std::string(token->lexeme);
 	if (variables.find(sname) != variables.end()) {
 		messenger->report(token, "Variable already defined");
+	}
+	variables.insert(std::make_pair(sname, var));
+}
+
+void Scope::add_proxy(Token *token, Variable *var) {
+	auto sname = std::string(var->name);
+	if (variables.find(sname) != variables.end()) {
+		messenger->report(token, "Illegal 'using'. Variable with member name already defined");
 	}
 	variables.insert(std::make_pair(sname, var));
 }

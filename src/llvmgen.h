@@ -55,6 +55,7 @@ struct CodeGenerator {
 	llvm::Value *gen_member(Member *expr);
     llvm::Value *gen_indexed(Indexed *expr);
 	llvm::Value *gen_builtin(Builtin *expr);
+	llvm::Value *gen_sizeof(SizeOf *expr);
 
 	llvm::Value *gen_expr_target(Expr *expr);
 

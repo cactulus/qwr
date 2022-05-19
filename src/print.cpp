@@ -24,6 +24,8 @@ const std::unordered_map<TokenType, std::string> keyword_tokens_names = {
 	{TOKEN_INCLUDE, "include"},
 	{TOKEN_QWR, "qwr"},
 	{TOKEN_TYPEDEF, "typedef"},
+	{TOKEN_SIZEOF, "sizeof"},
+	{TOKEN_USING, "using"},
 };
 
 const std::unordered_map<TokenType, std::string> two_char_tokens_names = {

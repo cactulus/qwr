@@ -25,7 +25,7 @@ read_entire_file :: (file str) str {
 
     fclose(f);
 
-	buffer[len] = '\0';
+	buffer[len] = '\0' as u8;
 
     return buffer as str;
 }
