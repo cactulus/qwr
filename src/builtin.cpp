@@ -48,11 +48,17 @@ void Parser::check_builtin_func(Token *token, Builtin *expr) {
 		if (args.size() > 2 || args.size() < 2) {
 			messenger->report(token, "Expected two arguments. Array and value");
 		}
-		if (!args[0]->type->isarray()) {
+        
+        auto arg0_type = args[0]->type;
+		if (!arg0_type->isarray()) {
 			messenger->report(token, "Expected first argument to be of type array");
 		}
+        
+        if (arg0_type->array_is_static) {
+            messenger->report(token, "'append' only possible on dynamic arrays");
+        }
 
-		auto arr_ty = args[0]->type->element_type;
+		auto arr_ty = arg0_type->element_type;
 		auto val_ty = args[1]->type;
 		if (!typer->compare(arr_ty, val_ty)) {
 			if (typer->can_convert_implicit(val_ty, arr_ty)) {
@@ -73,6 +79,9 @@ Value *CodeGenerator::gen_builtin(Builtin *expr) {
 	if (BUILTIN(expr, "len")) {
 		auto ty = args[0]->type;
 		if (ty->isarray()) {
+            if (ty->array_is_static) {
+                return ConstantInt::get(expr->type->llvm_type, ty->array_size);
+            }
 			auto target = builder->CreateLoad(gen_expr_target(args[0]));
 			auto fn = get_builtin("qwr_array_len");
 			return builder->CreateCall(fn, { target });
@@ -110,7 +119,7 @@ Function *CodeGenerator::get_builtin(const char *name) {
 
 Function *CodeGenerator::gen_append_func(std::string name, QType *value_type) {
 	auto ret_type = typer->get("void")->llvm_type;
-	auto array_type = typer->get_array(value_type)->llvm_type;
+	auto array_type = typer->get_dynamic_array(value_type)->llvm_type;
 	auto value_ptr_type = typer->make_pointer(value_type)->llvm_type;
 	auto u64_ty = typer->get("u64")->llvm_type;
 	auto s32_ty = typer->get("s32")->llvm_type;

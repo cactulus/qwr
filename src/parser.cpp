@@ -53,7 +53,7 @@ void Parser::init(Typer *_typer, Messenger *_messenger) {
 
 Stmt *Parser::parse_top_level_stmt() {
 	auto tok = lexer.peek_token();
-
+        
     if (tok->type == TOKEN_ATOM) {
         auto pt = lexer.peek_token(1)->type;
         if (pt == ':') {
@@ -458,6 +458,10 @@ Stmt *Parser::parse_variable_definition_type(Token *name_token, u8 flags) {
     QType *type = parse_type();
 
     if (eat_token_if(';')) {
+        if (type->isarray() && type->array_is_static && type->array_size == -1) {
+            messenger->report(name_token, "Cannot declare variable of static array type with undefined array length");
+        }
+        
         auto stmt = new VariableDefinition(name_token);
         stmt->var = new Variable(type, name_token);
         stmt->var->name = name_token->lexeme;
@@ -699,6 +703,9 @@ Stmt *Parser::parse_delete() {
     if (!target_ty->ispointer() && !target_ty->isarray()) {
         messenger->report(tok, "Can't delete non-pointer");
     }
+    if (target_ty->isarray() && target_ty->array_is_static) {
+        messenger->report(tok, "Can't delete static array");
+    }
     
     eat_semicolon();
 
@@ -810,8 +817,7 @@ Expr *Parser::parse_binary(int prec) {
                 rhs = cast(rhs, lhs_type);
             } else {
                 if (!(lhs_type->ispointer() && rhs_type->isint() && ttype_is_binary(tok_type))) {
-					std::cout << lhs_type->id << " " << rhs_type->id << "\n";
-                    messenger->report(tok, "Lhs and Rhs of binary expression are of different types");
+					messenger->report(tok, "Lhs and Rhs of binary expression are of different types");
                 }
             }
         }
@@ -1136,7 +1142,16 @@ Expr *Parser::parse_primary() {
 			}
 		} else if (ty->isarray()) {
 			auto arr_type = ty->element_type;
-			for (int i = 0; i < values.size(); ++i) {
+			
+            if (ty->array_is_static) {
+                if (ty->array_size == -1) {
+                    ty = typer->make_array(ty->element_type, true, values.size());
+                } else if (ty->array_size != values.size()) {
+                    messenger->report(ty_tok, "Number of values in compound literal does not match array type");
+                }
+            }
+            
+            for (int i = 0; i < values.size(); ++i) {
 				auto val_type = values[i]->type;
 				if (!typer->compare(val_type, arr_type)) {
 					if (typer->can_convert_implicit(val_type, arr_type)) {
@@ -1274,10 +1289,26 @@ QType *Parser::parse_type() {
 		lexer.eat_token();
 		return typer->make_pointer(parse_type());
 	}
-	if (tok->type == '[' && lexer.peek_token(1)->type == ']') {
-		lexer.eat_token();
-		lexer.eat_token();
-		return typer->make_array(parse_type());
+    if (tok->type == '[') {
+        lexer.eat_token();
+        
+        bool is_static = true;
+        long int array_size = -1;
+        
+        if (eat_token_if(TOKEN_DOT_DOT)) {
+            is_static = false;
+        } else {
+            auto size_token = lexer.peek_token();
+            if (eat_token_if(TOKEN_INT_LIT)) {
+                array_size = size_token->int_value;
+            }
+        }
+        
+        if (!eat_token_if(']')) {
+            messenger->report(lexer.peek_token(), "Expected ']'");
+        }
+        
+        return typer->make_array(parse_type(), is_static, array_size);
 	}
 	if (tok->type != TOKEN_ATOM) {
 		messenger->report(tok, "Expected type");

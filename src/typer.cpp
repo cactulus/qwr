@@ -95,15 +95,29 @@ QType *Typer::make_pointer(QType *type) {
 	return ptty;
 }
 
-QType *Typer::make_array(QType *type) {
-	auto id = "Array_" + type->id;
+QType *Typer::make_array(QType *type, bool is_static, long int size) {
+    std::string id;
+    if (is_static) {
+        id = "StaticArray_" + std::to_string(size) + type->id;
+    } else {
+        id = "DynamicArray_" + type->id;
+    }
 	if (has(id)) {
 		return get(id);
 	}
 
-	QType *ptty = make_type_intern(id, TYPE_ARRAY, make_pointer(get("Array"))->llvm_type);
+    Type *llvm_type;
+    if (is_static) {
+        llvm_type = ArrayType::get(type->llvm_type, size);
+    } else {
+        llvm_type = make_pointer(get("Array"))->llvm_type;
+    }
+    
+	QType *ptty = make_type_intern(id, TYPE_ARRAY, llvm_type);
 	ptty->element_type = type;
 	ptty->data_type = make_pointer(type);
+    ptty->array_is_static = is_static;
+    ptty->array_size = size;
 	return ptty;
 }
 
@@ -181,8 +195,8 @@ QType *Typer::get(const std::string &id) {
 	return types[id];
 }
 
-QType *Typer::get_array(QType *element_type) {
-	return get("Array_" + element_type->id);
+QType *Typer::get_dynamic_array(QType *element_type) {
+	return get("DynamicArray_" + element_type->id);
 }
 
 bool Typer::has(const std::string &id) {
@@ -252,6 +266,18 @@ bool Typer::compare(QType *type1, QType *type2) {
 		*type2 = *type1;
 		return true;
 	}
+    
+    if (type1->isarray() && type2->isarray()) {
+        bool element_type_compare = compare(type1->element_type, type2->element_type);
+        if (type1->array_is_static && type2->array_is_static) {
+            return element_type_compare && (type1->array_size == type2->array_size);
+        }
+        if (type1->array_is_static || type2->array_is_static)
+            return false;
+        
+        return element_type_compare;
+    }
+    
 
     return b1 == b2;
 }

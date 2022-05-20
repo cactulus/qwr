@@ -67,7 +67,7 @@ void CodeGenerator::init(Typer *_typer, Options * _options) {
 
 	llvm_module = new Module("test.ll", llvm_context);
 	builder = new IRBuilder<>(llvm_context);
-
+    
     init_module();
 	init_types();
 }
@@ -225,11 +225,13 @@ void CodeGenerator::gen_var_def(VariableDefinition *stmt) {
 		if (var_type->isarray()) {
 			var_ptr = builder->CreateAlloca(var_type->llvm_type);
 
-			auto create_fn = get_builtin("qwr_array_create");
-			auto type_size = llvm_size_of(var_type->element_type->llvm_type);
-			type_size_llvm = ConstantInt::get(u64_ty, type_size);
-			auto array_ptr = builder->CreateCall(create_fn, { type_size_llvm });
-			builder->CreateStore(array_ptr, var_ptr);
+            if (!var_type->array_is_static) {
+                auto create_fn = get_builtin("qwr_array_create");
+                auto type_size = llvm_size_of(var_type->element_type->llvm_type);
+                type_size_llvm = ConstantInt::get(u64_ty, type_size);
+                auto array_ptr = builder->CreateCall(create_fn, { type_size_llvm });
+                builder->CreateStore(array_ptr, var_ptr);
+            }
 		} else {
 			var_ptr = builder->CreateAlloca(var_type->llvm_type);
 		}
@@ -241,23 +243,23 @@ void CodeGenerator::gen_var_def(VariableDefinition *stmt) {
 				auto values = init_expr->values;
 
 				auto target = var_ptr;
-				if (var_type->isarray()) {
-					auto init_fn = get_builtin("qwr_array_init");
-					auto data_fn = get_builtin("qwr_array_data");
-					auto loaded_var_ptr = builder->CreateLoad(var_ptr);
-					auto llvm_values_count = ConstantInt::get(u64_ty, values.size());
+				if (var_type->isarray() && !var_type->array_is_static) {
+                    auto init_fn = get_builtin("qwr_array_init");
+                    auto data_fn = get_builtin("qwr_array_data");
+                    auto loaded_var_ptr = builder->CreateLoad(var_ptr);
+                    auto llvm_values_count = ConstantInt::get(u64_ty, values.size());
 
-					builder->CreateCall(init_fn, { loaded_var_ptr, llvm_values_count, type_size_llvm });
-					target = builder->CreateCall(data_fn, { loaded_var_ptr });
-					target = builder->CreatePointerCast(target, var_type->data_type->llvm_type);
-
-					for (int i = 0; i < values.size(); ++i) {
-						auto llvm_index = ConstantInt::get(s32_ty, i);
-						auto val = gen(values[i]);
-
-						auto tar = builder->CreateInBoundsGEP(target, { llvm_index });
-						builder->CreateStore(val, tar);
-					}
+                    builder->CreateCall(init_fn, { loaded_var_ptr, llvm_values_count, type_size_llvm });
+                    target = builder->CreateCall(data_fn, { loaded_var_ptr });
+                    target = builder->CreatePointerCast(target, var_type->data_type->llvm_type);
+                    
+                    for (int i = 0; i < values.size(); ++i) {
+                        auto llvm_zero = ConstantInt::get(s32_ty, 0);
+                        auto llvm_index = ConstantInt::get(s32_ty, i);
+                        auto val = gen(values[i]);
+                        auto tar = builder->CreateInBoundsGEP(target, { llvm_index });
+                        builder->CreateStore(val, tar);
+                    }
 				} else {
 					for (int i = 0; i < values.size(); ++i) {
 						auto llvm_zero = ConstantInt::get(s32_ty, 0);
@@ -362,6 +364,7 @@ void CodeGenerator::gen_while(While *stmt) {
 void CodeGenerator::gen_for(For *stmt) {
 	auto size_t = typer->get("u64")->llvm_type;
 	Value *iterator_val;
+    Value *loaded_iterator_val;
 	Value *from;
 	Value *to;
 	Type *var_type;
@@ -373,16 +376,21 @@ void CodeGenerator::gen_for(For *stmt) {
 	} else {
 		from = ConstantInt::get(size_t, 0);
 
-		iterator_val = gen(stmt->iterator);
+		iterator_val = gen_expr_target(stmt->iterator);
 		auto ty = stmt->iterator->type;
 		var_type = stmt->var->type->llvm_type;
 		Function *f;
 		if (ty->isarray()) {
-			f = get_builtin("qwr_array_len");
+            if (ty->array_is_static) {
+                to = ConstantInt::get(size_t, ty->array_size);
+            } else {
+                f = get_builtin("qwr_array_len");
+                to = builder->CreateCall(f, builder->CreateLoad(iterator_val));
+            }
 		} else {
 			f = get_builtin("strlen");
+            to = builder->CreateCall(f, builder->CreateLoad(iterator_val));
 		}
-		to = builder->CreateCall(f, iterator_val);
 	}
 
 	auto cond_block = BasicBlock::Create(llvm_context, "", current_function);
@@ -410,12 +418,12 @@ void CodeGenerator::gen_for(For *stmt) {
 		auto it_ty = stmt->iterator->type;
 		if (it_ty->isarray()) {
 			auto data_type = stmt->iterator->type->data_type->llvm_type;
-			auto var_val = gen_array_indexed(iterator_val, data_type, loaded_index);
+			auto var_val = gen_array_indexed(iterator_val, it_ty, loaded_index);
 
 			auto loaded = builder->CreateLoad(var_val);
 			builder->CreateStore(loaded, var);
 		} else {
-			auto var_val = gen_string_indexed(iterator_val, loaded_index);
+			auto var_val = gen_string_indexed(builder->CreateLoad(iterator_val), loaded_index);
 
 			auto loaded = builder->CreateLoad(var_val);
 			builder->CreateStore(loaded, var);
@@ -756,7 +764,7 @@ Value *CodeGenerator::gen_compare_zero(CompareZero *expr) {
 	QType *ty = expr->target->type;
 	Value *zero;
 
-	if (ty->ispointer()) {
+	if (ty->ispointer() || ty->isstring()) {
 		zero = ConstantPointerNull::get((PointerType *)ty->llvm_type);
 		return builder->CreateICmpNE(target, zero);
 	} else if (ty->isfloat()) {
@@ -819,9 +827,9 @@ Value *CodeGenerator::gen_expr_target(Expr *expr) {
 		auto index = ind_expr->index;
 		auto target_ty = ind_expr->target->type;
 		if (target_ty->isarray()) {
-			return gen_array_indexed(gen(ind_expr->target), target_ty->data_type->llvm_type, gen(index));
+			return gen_array_indexed(gen_expr_target(ind_expr->target), target_ty, gen(index));
 		} else if (target_ty->isstring()) {
-			return gen_string_indexed(gen_expr_target(ind_expr->target), gen(index));
+			return gen_string_indexed(gen(ind_expr->target), gen(index));
 		} else {
 			auto target = gen(ind_expr->target);
 
@@ -857,18 +865,23 @@ Value *CodeGenerator::gen_expr_target(Expr *expr) {
     return 0;
 }
 
-Value *CodeGenerator::gen_array_indexed(Value *arr, Type *arr_ty, Value *index) {
-	auto data_fn = get_builtin("qwr_array_data");
+Value *CodeGenerator::gen_array_indexed(Value *arr, QType *arr_ty, Value *index) {
+    if (arr_ty->array_is_static) {
+        auto llvm_zero = ConstantInt::get(index->getType(), 0);
+        return builder->CreateInBoundsGEP(arr, { llvm_zero, index });
+    } else {
+        auto data_fn = get_builtin("qwr_array_data");
 
-	Value *target = builder->CreateCall(data_fn, { arr });
-	target = builder->CreatePointerCast(target, arr_ty);
+        auto data_type = arr_ty->data_type->llvm_type;
+        Value *target = builder->CreateCall(data_fn, { builder->CreateLoad(arr) });
+        target = builder->CreatePointerCast(target, data_type);
 
-	return builder->CreateInBoundsGEP(target, { index });
+        return builder->CreateInBoundsGEP(target, { index });
+    }
 }
 
 Value *CodeGenerator::gen_string_indexed(Value *str, Value *index) {
-	auto str_ptr = builder->CreateLoad(str);
-	return builder->CreateInBoundsGEP(str_ptr, { index });
+	return builder->CreateInBoundsGEP(str, { index });
 }
 
 Type *CodeGenerator::gen_return_type(std::vector<QType *> types) {

@@ -59,7 +59,7 @@ struct CodeGenerator {
 
 	llvm::Value *gen_expr_target(Expr *expr);
 
-	llvm::Value *gen_array_indexed(llvm::Value *arr, llvm::Type *arr_type, llvm::Value *index);
+	llvm::Value *gen_array_indexed(llvm::Value *arr, QType *arr_type, llvm::Value *index);
 	llvm::Value *gen_string_indexed(llvm::Value *str, llvm::Value *index);
 		
     llvm::Type *gen_return_type(std::vector<QType *> types);

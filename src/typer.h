@@ -56,6 +56,8 @@ struct QType {
 		struct {
 			QType *element_type;
 			QType *data_type;
+            bool array_is_static;
+            long int array_size;
 		};
 
 		struct {
@@ -88,7 +90,7 @@ struct Typer {
 	void init(llvm::LLVMContext *_llvm_context, Messenger *_messenger);
 	
 	QType *make_pointer(QType *type);
-	QType *make_array(QType *type);
+	QType *make_array(QType *type, bool is_static, long int size);
 	QType *make_struct(const char *name, struct_fields_type *fields);
 	QType *make_nil();
 	QType *make_type(Token *token, QBaseType base, llvm::Type *llvm_type);
@@ -97,7 +99,7 @@ struct Typer {
 
 	QType *get(Token *type_token);
 	QType *get(const std::string &id);
-	QType *get_array(QType *element_type);
+	QType *get_dynamic_array(QType *element_type);
 
 	bool has(const std::string &id);
 
