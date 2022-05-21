@@ -240,70 +240,76 @@ void CodeGenerator::gen_var_def(VariableDefinition *stmt) {
 			var_ptr = builder->CreateAlloca(var_type->llvm_type);
 		}
 
-		if (stmt->value) {
-			if (stmt->value->type->isarray() || stmt->value->type->isstruct()) {
-				auto init_expr = (CompoundLiteral *) stmt->value;
+        if (debug) {
+            auto ln = stmt->location.line;
+            auto dbg_scope = dbg_scopes.back();
+            auto dbg_var = dbg_builder->createAutoVariable(dbg_scope, var->name, dbg_file, ln, convert_type_dbg(var->type));
 
-				auto values = init_expr->values;
-
-				auto target = var_ptr;
-				if (var_type->isarray() && !var_type->array_is_static) {
-                    auto init_fn = get_builtin("qwr_array_init");
-                    auto data_fn = get_builtin("qwr_array_data");
-                    auto loaded_var_ptr = builder->CreateLoad(var_ptr);
-                    auto llvm_values_count = ConstantInt::get(u64_ty, values.size());
-
-                    builder->CreateCall(init_fn, { loaded_var_ptr, llvm_values_count, type_size_llvm });
-                    target = builder->CreateCall(data_fn, { loaded_var_ptr });
-                    target = builder->CreatePointerCast(target, var_type->data_type->llvm_type);
-                    
-                    for (int i = 0; i < values.size(); ++i) {
-                        auto llvm_zero = ConstantInt::get(s32_ty, 0);
-                        auto llvm_index = ConstantInt::get(s32_ty, i);
-                        auto val = gen(values[i]);
-                        auto tar = builder->CreateInBoundsGEP(target, { llvm_index });
-                        builder->CreateStore(val, tar);
-                    }
-				} else {
-				    if (init_expr->lit_is_constant) {
-				        target = builder->CreateBitCast(target, u8ptr_ty);
-
-				        auto constant_value = builder->CreateBitCast(gen_constant_compound_lit_var(init_expr, var_type), u8ptr_ty);
-
-                        MaybeAlign align(llvm_align_of(var_type->llvm_type));
-                        auto mem_cpy_size = llvm_size_of(var_type->llvm_type);
-                        builder->CreateMemCpy(target, align, constant_value, align, mem_cpy_size);
-                    } else {
-                        for (int i = 0; i < values.size(); ++i) {
-                            auto llvm_zero = ConstantInt::get(s32_ty, 0);
-                            auto llvm_index = ConstantInt::get(s32_ty, i);
-                            auto val = gen(values[i]);
-
-                            auto tar = builder->CreateInBoundsGEP(target, { llvm_zero, llvm_index });
-                            builder->CreateStore(val, tar);
-                        }
-                    }
-				}
-			} else {
-				auto val = gen(stmt->value);
-				if (val->getType()->isStructTy()) {
-					val = builder->CreateExtractValue(val, 0);
-				}
-				builder->CreateStore(val, var_ptr);
-			}
+            dbg_builder->insertDeclare(var_ptr, dbg_var, dbg_builder->createExpression(),
+                DILocation::get(dbg_scope->getContext(), ln, 0, dbg_scope), builder->GetInsertBlock());
         }
 
-		if (debug) {
-			auto ln = stmt->location.line;
-			auto dbg_scope = dbg_scopes.back();
-			auto dbg_var = dbg_builder->createAutoVariable(dbg_scope, var->name, dbg_file, ln, convert_type_dbg(var->type));
+        stmt->var->llvm_ref = var_ptr;
 
-			dbg_builder->insertDeclare(var_ptr, dbg_var, dbg_builder->createExpression(),
-				DILocation::get(dbg_scope->getContext(), ln, 0, dbg_scope), builder->GetInsertBlock());
-		}
+		if (!stmt->value) {
+		    return;
+        }
 
-		stmt->var->llvm_ref = var_ptr;
-	} 
+        if (stmt->value->type->isarray() || stmt->value->type->isstruct()) {
+            auto init_expr = (CompoundLiteral *) stmt->value;
+            auto values = init_expr->values;
+            auto target = var_ptr;
+
+            bool is_dynamic_array = var_type->isarray() && !var_type->array_is_static;
+            if (is_dynamic_array) {
+                auto init_fn = get_builtin("qwr_array_init");
+                auto data_fn = get_builtin("qwr_array_data");
+                auto loaded_var_ptr = builder->CreateLoad(var_ptr);
+                auto llvm_values_count = ConstantInt::get(u64_ty, values.size());
+
+                builder->CreateCall(init_fn, { loaded_var_ptr, llvm_values_count, type_size_llvm });
+                target = builder->CreateCall(data_fn, { loaded_var_ptr });
+            }
+            if (init_expr->lit_is_constant) {
+                target = builder->CreateBitCast(target, u8ptr_ty);
+
+                QType *lit_type = var_type;
+                if (is_dynamic_array) {
+                    lit_type = typer->make_array(var_type->element_type, true, values.size());
+                }
+
+                auto constant_value = builder->CreateBitCast(gen_constant_compound_lit_var(init_expr, lit_type), u8ptr_ty);
+
+                MaybeAlign align(llvm_align_of(lit_type->llvm_type));
+                auto mem_cpy_size = llvm_size_of(lit_type->llvm_type);
+                builder->CreateMemCpy(target, align, constant_value, align, mem_cpy_size);
+            } else {
+                if (is_dynamic_array) {
+                    target = builder->CreatePointerCast(target, var_type->data_type->llvm_type);
+                }
+                
+                for (int i = 0; i < values.size(); ++i) {
+                    auto llvm_zero = ConstantInt::get(s32_ty, 0);
+                    auto llvm_index = ConstantInt::get(s32_ty, i);
+                    auto val = gen(values[i]);
+                    Value *tar;
+                    if (is_dynamic_array) {
+                        tar = builder->CreateInBoundsGEP(target, { llvm_index });
+                    } else {
+                        tar = builder->CreateInBoundsGEP(target, { llvm_zero, llvm_index });
+                    }
+                    builder->CreateStore(val, tar);
+                }
+            }
+
+        } else {
+            auto val = gen(stmt->value);
+            if (val->getType()->isStructTy()) {
+                val = builder->CreateExtractValue(val, 0);
+            }
+            builder->CreateStore(val, var_ptr);
+        }
+    }
 }
 
 void CodeGenerator::gen_return(Return *stmt) {
