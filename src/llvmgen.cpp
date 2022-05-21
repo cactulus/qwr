@@ -13,6 +13,7 @@
 #include <llvm/IR/DerivedTypes.h>
 #include "llvm/Transforms/IPO.h"
 #include "llvm/Transforms/IPO/PassManagerBuilder.h"
+#include "llvm/Transforms/Scalar.h"
 
 #include "lexer.h"
 #include "llvmgen.h"
@@ -52,18 +53,21 @@ const std::unordered_map<ExprKind, gen_expr_fun> expr_gen_funs = {
 	{MEMBER, (gen_expr_fun) &CodeGenerator::gen_member},
 	{INDEXED, (gen_expr_fun) &CodeGenerator::gen_indexed},
 	{SIZEOF, (gen_expr_fun) &CodeGenerator::gen_sizeof},
+	{COMPOUND_LIT, (gen_expr_fun) &CodeGenerator::gen_compound_lit},
 };
 
 std::unordered_map<std::string, Value *> constant_string_literals = {};
+static int global_constants_count = 0;
 
 static Function *current_function;
 static Type *s32_ty;
 static Type *u8_ty;
+static Type *u8ptr_ty;
 static Type *u64_ty;
 
 void CodeGenerator::init(Typer *_typer, Options * _options) {
 	typer = _typer;
-	debug = _options->flags & DEBUG;
+	debug = _options->flags & QWR_DEBUG;
 
 	llvm_module = new Module("test.ll", llvm_context);
 	builder = new IRBuilder<>(llvm_context);
@@ -189,8 +193,8 @@ void CodeGenerator::gen_var_def(VariableDefinition *stmt) {
 
 		var->setConstant(stmt->flags & VAR_CONST);
 		
-		auto init = dyn_cast<Constant>(gen(stmt->value));
-		var->setInitializer(init);
+        auto init = dyn_cast<Constant>(gen(stmt->value));
+        var->setInitializer(init);
 
 		stmt->var->llvm_ref = var;
     } else if (stmt->flags & VAR_MULTIPLE) {
@@ -261,14 +265,24 @@ void CodeGenerator::gen_var_def(VariableDefinition *stmt) {
                         builder->CreateStore(val, tar);
                     }
 				} else {
-					for (int i = 0; i < values.size(); ++i) {
-						auto llvm_zero = ConstantInt::get(s32_ty, 0);
-						auto llvm_index = ConstantInt::get(s32_ty, i);
-						auto val = gen(values[i]);
+				    if (init_expr->lit_is_constant) {
+				        target = builder->CreateBitCast(target, u8ptr_ty);
 
-						auto tar = builder->CreateInBoundsGEP(target, { llvm_zero, llvm_index });
-						builder->CreateStore(val, tar);
-					}
+				        auto constant_value = builder->CreateBitCast(gen_constant_compound_lit_var(init_expr, var_type), u8ptr_ty);
+
+                        MaybeAlign align(llvm_align_of(var_type->llvm_type));
+                        auto mem_cpy_size = llvm_size_of(var_type->llvm_type);
+                        builder->CreateMemCpy(target, align, constant_value, align, mem_cpy_size);
+                    } else {
+                        for (int i = 0; i < values.size(); ++i) {
+                            auto llvm_zero = ConstantInt::get(s32_ty, 0);
+                            auto llvm_index = ConstantInt::get(s32_ty, i);
+                            auto val = gen(values[i]);
+
+                            auto tar = builder->CreateInBoundsGEP(target, { llvm_zero, llvm_index });
+                            builder->CreateStore(val, tar);
+                        }
+                    }
 				}
 			} else {
 				auto val = gen(stmt->value);
@@ -804,6 +818,10 @@ Value *CodeGenerator::gen_sizeof(SizeOf *expr) {
     return ConstantInt::get(ty, size);
 }
 
+Value *CodeGenerator::gen_compound_lit(CompoundLiteral *expr) {
+    return gen_constant_compound_lit(expr, expr->type);
+}
+
 Value *CodeGenerator::gen_expr_target(Expr *expr) {
     ExprKind kind = expr->kind();
     if (kind == VARIABLE) {
@@ -905,6 +923,35 @@ Type *CodeGenerator::gen_return_type(std::vector<Expr *> types) {
     return StructType::get(llvm_context, return_types);
 }
 
+Value *CodeGenerator::gen_constant_compound_lit_var(CompoundLiteral *expr, QType *var_type) {
+    auto constant_val_name = "const_data" + std::to_string(global_constants_count++);
+
+    llvm_module->getOrInsertGlobal(constant_val_name, var_type->llvm_type);
+    auto var = llvm_module->getGlobalVariable(constant_val_name);
+
+    var->setConstant(true);
+    
+    var->setInitializer(gen_constant_compound_lit(expr, var_type));
+    
+    return var;
+}
+
+Constant *CodeGenerator::gen_constant_compound_lit(CompoundLiteral *expr, QType *var_type) {
+    auto values = expr->values;
+    std::vector<Constant *> constants;
+    for (int i = 0; i < values.size(); ++i) {
+        constants.push_back((Constant *) gen(values[i]));
+    }
+    Constant *constant_value;
+    if (var_type->isarray()) {
+        constant_value = ConstantArray::get((ArrayType *) var_type->llvm_type, constants);
+    } else {
+        constant_value = ConstantStruct::get((StructType *) var_type->llvm_type, constants);
+    }
+
+    return constant_value;
+}
+
 void CodeGenerator::emit_location_dbg(Stmt *stmt) {
 	auto scope = dbg_scopes.back();
 	auto loc = stmt->location;
@@ -949,6 +996,10 @@ int CodeGenerator::llvm_size_of(Type *type) {
     return size / 8;
 }
 
+int CodeGenerator::llvm_align_of(Type *type) {
+    return llvm_module->getDataLayout().getPrefTypeAlignment(type);
+}
+
 void CodeGenerator::init_module() {
     InitializeNativeTarget();
     InitializeNativeTargetAsmParser();
@@ -983,6 +1034,7 @@ void CodeGenerator::init_module() {
 void CodeGenerator::init_types() {
 	s32_ty = typer->get("s32")->llvm_type;
 	u8_ty = typer->get("u8")->llvm_type;
+	u8ptr_ty = typer->make_pointer(typer->get("u8"))->llvm_type;
 	u64_ty = typer->get("u64")->llvm_type;
 }
 

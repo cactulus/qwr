@@ -170,6 +170,7 @@ struct CompoundLiteral : Expr {
     using Expr::Expr;
 
     std::vector<Expr *> values;
+    bool lit_is_constant;
 
     virtual ExprKind kind() override {
         return COMPOUND_LIT;

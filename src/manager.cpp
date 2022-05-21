@@ -61,7 +61,7 @@ void manager_run() {
     const char *code;
     auto code_len = read_entire_file(options->src_file, &code);
 
-	if (!(options->flags & X64_BACKEND) && options->flags & DEBUG) {
+	if (!(options->flags & X64_BACKEND) && options->flags & QWR_DEBUG) {
 		llvm_code_gen.init_debug(options->src_file);
 	}
 

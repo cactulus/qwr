@@ -56,6 +56,7 @@ struct CodeGenerator {
     llvm::Value *gen_indexed(Indexed *expr);
 	llvm::Value *gen_builtin(Builtin *expr);
 	llvm::Value *gen_sizeof(SizeOf *expr);
+	llvm::Value *gen_compound_lit(CompoundLiteral *expr);
 
 	llvm::Value *gen_expr_target(Expr *expr);
 
@@ -65,6 +66,9 @@ struct CodeGenerator {
     llvm::Type *gen_return_type(std::vector<QType *> types);
     llvm::Type *gen_return_type(std::vector<Expr *> types);
 
+    llvm::Value *gen_constant_compound_lit_var(CompoundLiteral *expr, QType *var_type);
+    llvm::Constant *gen_constant_compound_lit(CompoundLiteral *expr, QType *var_type);
+
 	llvm::Function *get_builtin(const char *name);
 	llvm::Function *gen_append_func(std::string name, QType *value_type);
 
@@ -73,6 +77,7 @@ struct CodeGenerator {
 
 	llvm::DIType *convert_type_dbg(QType *type);
     int llvm_size_of(llvm::Type *type);
+    int llvm_align_of(llvm::Type *type);
 
     void init_module();
 	void init_types();

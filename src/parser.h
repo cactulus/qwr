@@ -83,6 +83,7 @@ struct Parser {
     Expr *make_compare_strings(Expr *lhs, Expr *rhs, TokenType op);
 
     bool expr_is_targatable(Expr *expr);
+    bool expr_is_constant(Expr *expr);
     
 	QType *parse_type();
 

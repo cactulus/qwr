@@ -56,7 +56,7 @@ void Typer::init(LLVMContext *_llvm_context, Messenger *_messenger) {
 	messenger = _messenger;
 
 	make_type_intern("void", TYPE_VOID, (Type *) Type::getVoidTy(*llvm_context));
-	make_type_intern("i8", TYPE_INT8, (Type *) Type::getInt8Ty(*llvm_context));
+	make_type_intern("s8", TYPE_INT8, (Type *) Type::getInt8Ty(*llvm_context));
 	make_type_intern("s16", TYPE_INT16, (Type *) Type::getInt16Ty(*llvm_context));
 	make_type_intern("s32", TYPE_INT32, (Type *) Type::getInt32Ty(*llvm_context));
 	make_type_intern("s64", TYPE_INT64, (Type *) Type::getInt64Ty(*llvm_context));

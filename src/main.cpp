@@ -45,7 +45,7 @@ int main(int argc, char *argv[]) {
         if (strcmp(arg, "-release") == 0) {
             options.flags |= OPTIMIZE;
         } else if (strcmp(arg, "-debug") == 0) {
-            options.flags |= DEBUG;
+            options.flags |= QWR_DEBUG;
         } else if (strcmp(arg, "-print-ir") == 0) {
             options.flags |= PRINT_LLVM;
         } else if (strcmp(arg, "-c") == 0) {
@@ -90,7 +90,7 @@ int main(int argc, char *argv[]) {
         exit(1);
     }
 
-    if ((options.flags & DEBUG) && (options.flags & OPTIMIZE)) {
+    if ((options.flags & QWR_DEBUG) && (options.flags & OPTIMIZE)) {
         std::cout << "-debug and -release cannot be specified at the same time\n";
         exit(1);
     }

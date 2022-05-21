@@ -1118,8 +1118,14 @@ Expr *Parser::parse_primary() {
 
 	if (eat_token_if('{')) {
         std::vector<Expr *> values;
+        bool lit_is_constant = true;
 		while (!eat_token_if('}')) {
-			values.push_back(parse_expr());
+		    auto val = parse_expr();
+            if (!expr_is_constant(val)) {
+                lit_is_constant = false;
+            }
+		    
+			values.push_back(val);
 			eat_token_if(',');
 		}
 
@@ -1167,6 +1173,7 @@ Expr *Parser::parse_primary() {
 
 		auto expr = new CompoundLiteral(ty, tok);
 		expr->values = values;
+		expr->lit_is_constant = lit_is_constant;
 		return expr;
 	}
 
@@ -1276,11 +1283,35 @@ Expr *Parser::make_compare_strings(Expr *lhs, Expr *rhs, TokenType op) {
 
 bool Parser::expr_is_targatable(Expr *expr) {
     ExprKind kind = expr->kind();
-    if (kind == VARIABLE) {
-        auto var = (Variable *) expr;
-        return !(var->flags & VAR_PROXY_ENUM);
+    switch (kind) {
+        case VARIABLE: {
+            auto var = (Variable *) expr;
+            return !(var->flags & VAR_PROXY_ENUM);
+        }
+        case DEREF:
+        case MEMBER:
+        case INDEXED:
+            return true;
+        default:
+            return false;
     }
-    return kind == DEREF || kind == MEMBER || kind == INDEXED;
+}	
+
+bool Parser::expr_is_constant(Expr *expr) {
+    ExprKind kind = expr->kind();
+    switch (kind) {
+        case INT_LIT:
+        case FLOAT_LIT:
+        case STRING_LIT:
+        case COMPOUND_LIT:
+            return true;
+        case VARIABLE: {
+            auto var = (Variable *) expr;
+            return var->flags & VAR_CONST;
+        }
+        default:
+            return false;
+    }
 }	
 
 QType *Parser::parse_type() {
