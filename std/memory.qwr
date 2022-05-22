@@ -1,0 +1,5 @@
+extern memchr :: (pointer ptr, c s32, n u64) ptr;
+extern memcmp :: (ptr1 ptr, ptr2 ptr, n u64) int;
+extern memcpy :: (dest ptr, src ptr, n u64) ptr;
+extern memmove :: (dest ptr, src ptr, n u64) ptr;
+extern memset :: (dest ptr, val int, n u64) ptr;

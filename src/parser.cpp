@@ -850,7 +850,7 @@ Expr *Parser::parse_binary(int prec) {
 }
 
 Expr *Parser::parse_cast() {
-	auto expr = parse_postfix();
+	auto expr = parse_unary();
 
 	if (eat_token_if(TOKEN_AS)) {
 		auto tok = lexer.peek_token();
@@ -864,6 +864,74 @@ Expr *Parser::parse_cast() {
 	}
 
 	return expr;
+}
+
+Expr *Parser::parse_unary() {
+    auto tok = lexer.peek_token();
+
+    if (eat_token_if('&')) {
+        auto target = parse_postfix();
+        auto target_kind = target->kind();
+
+        if (target_kind != VARIABLE &&
+            target_kind != MEMBER &&
+            target_kind != INDEXED) {
+            messenger->report(tok, "Can't reference non variable");
+        }
+
+        auto target_type = target->type;
+
+		auto expr = new Unary(typer->make_pointer(target_type), tok); 
+        expr->target = target;
+        expr->op = '&';
+
+        return expr;
+    } else if (eat_token_if('*')) {
+        auto target = parse_unary();
+
+        if (!expr_is_targatable(target)) {
+            messenger->report(tok, "Can't dereference non variable");
+        }
+
+		auto expr = new Deref(target->type->element_type, tok);
+        expr->target = target;
+		
+        return expr;
+    } else if (eat_token_if('+')) {
+        return parse_postfix();
+    } else if (eat_token_if('!')) {
+        auto target = parse_postfix();
+        if (!target->type->isbool()) {
+            target = make_compare_zero(target);
+        }
+
+		auto expr = new Unary(target->type, tok);
+        expr->target = target;
+        expr->op = '!';
+		
+        return expr;
+    } else if (eat_token_if('-')) {
+        auto target = parse_postfix();
+
+		auto expr = new Unary(target->type, tok);
+        expr->target = target;
+        expr->op = '-';
+		
+        return expr;
+	} else if (eat_token_if(TOKEN_PLUS_PLUS) || eat_token_if(TOKEN_MINUS_MINUS)) {
+		auto target = parse_postfix();
+		if (!target->type->isint()) {
+			messenger->report(tok, "Can't use ++ or -- on non-integer expression");
+		}
+
+		auto expr = new Unary(target->type, tok);
+		expr->target = target;
+		expr->op = tok->type;
+		expr->ispost = false;
+		return expr;
+	}
+
+	return parse_postfix();
 }
 
 Expr *Parser::parse_postfix() {
@@ -881,12 +949,30 @@ Expr *Parser::parse_postfix() {
 		expr->ispost = true;
 		return expr;
 	}
+
+    if (eat_token_if('[')) {
+        if (!target->type->ispointer() && !target->type->isarray() && !target->type->isstring()) {
+            messenger->report(tok, "This type can't be indexed");
+        }
+
+        auto index = parse_expr();
+        eat_token_if(']');
+
+        if (!index->type->isint()) {
+            messenger->report(tok, "Index has to be of integer type");
+        }
+
+        auto indexed = new Indexed(target->type->element_type, tok);
+        indexed->index = index;
+        indexed->target = target;
+
+        return indexed;
+    }
 	
 	return target;
 }
-
 Expr *Parser::parse_access() {
-    auto e = parse_unary();
+    auto e = parse_primary();
 
     if (!expr_is_targatable(e) || lexer.peek_token()->type != '.') {
         return e;
@@ -936,74 +1022,6 @@ Expr *Parser::parse_access() {
     expr->indices = indices;
     expr->dereferences = dereferences;
     return expr;
-}
-
-Expr *Parser::parse_unary() {
-    auto tok = lexer.peek_token();
-
-    if (eat_token_if('&')) {
-        auto target = parse_primary();
-        auto target_kind = target->kind();
-
-        if (target_kind != VARIABLE &&
-            target_kind != MEMBER &&
-            target_kind != INDEXED) {
-            messenger->report(tok, "Can't reference non variable");
-        }
-
-        auto target_type = target->type;
-
-		auto expr = new Unary(typer->make_pointer(target_type), tok); 
-        expr->target = target;
-        expr->op = '&';
-
-        return expr;
-    } else if (eat_token_if('*')) {
-        auto target = parse_unary();
-
-        if (!expr_is_targatable(target)) {
-            messenger->report(tok, "Can't dereference non variable");
-        }
-
-		auto expr = new Deref(target->type->element_type, tok);
-        expr->target = target;
-		
-        return expr;
-    } else if (eat_token_if('+')) {
-        return parse_primary();
-    } else if (eat_token_if('!')) {
-        auto target = parse_cast();
-        if (!target->type->isbool()) {
-            target = make_compare_zero(target);
-        }
-
-		auto expr = new Unary(target->type, tok);
-        expr->target = target;
-        expr->op = '!';
-		
-        return expr;
-    } else if (eat_token_if('-')) {
-        auto target = parse_primary();
-
-		auto expr = new Unary(target->type, tok);
-        expr->target = target;
-        expr->op = '-';
-		
-        return expr;
-	} else if (eat_token_if(TOKEN_PLUS_PLUS) || eat_token_if(TOKEN_MINUS_MINUS)) {
-		auto target = parse_primary();
-		if (!target->type->isint()) {
-			messenger->report(tok, "Can't use ++ or -- on non-integer expression");
-		}
-
-		auto expr = new Unary(target->type, tok);
-		expr->target = target;
-		expr->op = tok->type;
-		expr->ispost = false;
-		return expr;
-	}
-
-	return parse_primary();
 }
 
 Expr *Parser::parse_primary() {
@@ -1108,28 +1126,7 @@ Expr *Parser::parse_primary() {
             messenger->report(category, "Value not found in enum");
         }
 
-		auto target = scope->find(tok);
-
-        if (eat_token_if('[')) {
-            if (!target->type->ispointer() && !target->type->isarray() && !target->type->isstring()) {
-                messenger->report(tok, "This type can't be indexed");
-            }
-
-            auto index = parse_expr();
-            eat_token_if(']');
-
-            if (!index->type->isint()) {
-                messenger->report(tok, "Index has to be of integer type");
-            }
-
-            auto indexed = new Indexed(target->type->element_type, tok);
-            indexed->index = index;
-            indexed->target = target;
-
-            return indexed;
-        }
-
-        return target;
+		return scope->find(tok);
 	}
 
 	if (eat_token_if('{')) {

@@ -27,3 +27,7 @@ max :: (a int, b int) int {
 	
 	return b;
 }
+
+degree_to_radian :: (deg f64) f64 {
+    return deg * (PI / 180.0); 
+}
