@@ -101,10 +101,10 @@ QType *Typer::make_array(QType *type, u8 flags, long int size) {
         id = "StaticArray_" + std::to_string(size) + type->id;
     } else {
         id = "DynamicArray_" + type->id;
+        if (has(id)) {
+            return get(id);
+        }
     }
-	if (has(id)) {
-		return get(id);
-	}
 
     Type *llvm_type;
     if (flags & ARRAY_STATIC) {

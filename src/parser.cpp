@@ -518,6 +518,10 @@ QType *Parser::parse_variable_definition_base(Token *name_token, u8 flags, Varia
 	stmt->value = val_expr;
     stmt->flags = flags;
 
+    if ((flags & VAR_CONST) && !expr_is_constant(val_expr)) {
+        messenger->report(name_token, "Can't assign non-constant value to constant variable");
+    }
+
 	scope->add(name_token, stmt->var);
 
 	eat_semicolon();
