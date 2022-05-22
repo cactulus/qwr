@@ -426,6 +426,18 @@ void Parser::parse_function_parameters(FunctionDefinition *stmt, bool add_to_sco
 		auto pname = tok->lexeme;
 
 		auto ptype = parse_type();
+		if (ptype->ispointer()) {
+		    auto elm_type = ptype->element_type;
+		    while (elm_type->ispointer()) {
+		        elm_type = elm_type->element_type;
+            }
+            if (elm_type->isarray() && (elm_type->flags & ARRAY_STATIC)) {
+                elm_type->flags |= ARRAY_PACKED;
+            }
+        } else if (ptype->isarray() && (ptype->flags & ARRAY_STATIC)) {
+            ptype->flags |= ARRAY_PACKED;
+        }
+
 		auto var = new Variable(ptype, tok);
 		var->name = pname;
 		stmt->parameters.push_back(var);
@@ -458,7 +470,7 @@ Stmt *Parser::parse_variable_definition_type(Token *name_token, u8 flags) {
     QType *type = parse_type();
 
     if (eat_token_if(';')) {
-        if (type->isarray() && type->array_is_static && type->array_size == -1) {
+        if (type->isarray() && (type->flags & ARRAY_STATIC) && type->array_size == -1) {
             messenger->report(name_token, "Cannot declare variable of static array type with undefined array length");
         }
         
@@ -703,7 +715,7 @@ Stmt *Parser::parse_delete() {
     if (!target_ty->ispointer() && !target_ty->isarray()) {
         messenger->report(tok, "Can't delete non-pointer");
     }
-    if (target_ty->isarray() && target_ty->array_is_static) {
+    if (target_ty->isarray() && (target_ty->flags & ARRAY_STATIC)) {
         messenger->report(tok, "Can't delete static array");
     }
     
@@ -1149,9 +1161,9 @@ Expr *Parser::parse_primary() {
 		} else if (ty->isarray()) {
 			auto arr_type = ty->element_type;
 			
-            if (ty->array_is_static) {
+            if (ty->flags & ARRAY_STATIC) {
                 if (ty->array_size == -1) {
-                    ty = typer->make_array(ty->element_type, true, values.size());
+                    ty = typer->make_array(ty->element_type, ARRAY_STATIC, values.size());
                 } else if (ty->array_size != values.size()) {
                     messenger->report(ty_tok, "Number of values in compound literal does not match array type");
                 }
@@ -1323,12 +1335,13 @@ QType *Parser::parse_type() {
     if (tok->type == '[') {
         lexer.eat_token();
         
-        bool is_static = true;
+        u8 flags = 0;
         long int array_size = -1;
         
         if (eat_token_if(TOKEN_DOT_DOT)) {
-            is_static = false;
+            flags |= ARRAY_DYNAMIC;
         } else {
+            flags |= ARRAY_STATIC;
             auto size_token = lexer.peek_token();
             if (eat_token_if(TOKEN_INT_LIT)) {
                 array_size = size_token->int_value;
@@ -1339,7 +1352,7 @@ QType *Parser::parse_type() {
             messenger->report(lexer.peek_token(), "Expected ']'");
         }
         
-        return typer->make_array(parse_type(), is_static, array_size);
+        return typer->make_array(parse_type(), flags, array_size);
 	}
 	if (tok->type != TOKEN_ATOM) {
 		messenger->report(tok, "Expected type");

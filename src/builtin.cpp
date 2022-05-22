@@ -54,7 +54,7 @@ void Parser::check_builtin_func(Token *token, Builtin *expr) {
 			messenger->report(token, "Expected first argument to be of type array");
 		}
         
-        if (arg0_type->array_is_static) {
+        if (arg0_type->flags & ARRAY_STATIC) {
             messenger->report(token, "'append' only possible on dynamic arrays");
         }
 
@@ -77,9 +77,13 @@ Value *CodeGenerator::gen_builtin(Builtin *expr) {
 	auto args = expr->arguments;
 
 	if (BUILTIN(expr, "len")) {
-		auto ty = args[0]->type;
+	    auto arg0 = args[0];
+		auto ty = arg0->type;
 		if (ty->isarray()) {
-            if (ty->array_is_static) {
+            if (ty->flags & ARRAY_STATIC) {
+                if (ty->flags & ARRAY_PACKED) {
+                    return builder->CreateLoad(ty->array_size_ref);
+                }
                 return ConstantInt::get(expr->type->llvm_type, ty->array_size);
             }
 			auto target = builder->CreateLoad(gen_expr_target(args[0]));

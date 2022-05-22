@@ -95,9 +95,9 @@ QType *Typer::make_pointer(QType *type) {
 	return ptty;
 }
 
-QType *Typer::make_array(QType *type, bool is_static, long int size) {
+QType *Typer::make_array(QType *type, u8 flags, long int size) {
     std::string id;
-    if (is_static) {
+    if (flags & ARRAY_STATIC) {
         id = "StaticArray_" + std::to_string(size) + type->id;
     } else {
         id = "DynamicArray_" + type->id;
@@ -107,7 +107,7 @@ QType *Typer::make_array(QType *type, bool is_static, long int size) {
 	}
 
     Type *llvm_type;
-    if (is_static) {
+    if (flags & ARRAY_STATIC) {
         llvm_type = ArrayType::get(type->llvm_type, size);
     } else {
         llvm_type = make_pointer(get("Array"))->llvm_type;
@@ -116,7 +116,7 @@ QType *Typer::make_array(QType *type, bool is_static, long int size) {
 	QType *ptty = make_type_intern(id, TYPE_ARRAY, llvm_type);
 	ptty->element_type = type;
 	ptty->data_type = make_pointer(type);
-    ptty->array_is_static = is_static;
+    ptty->flags = flags;
     ptty->array_size = size;
 	return ptty;
 }
@@ -269,10 +269,13 @@ bool Typer::compare(QType *type1, QType *type2) {
     
     if (type1->isarray() && type2->isarray()) {
         bool element_type_compare = compare(type1->element_type, type2->element_type);
-        if (type1->array_is_static && type2->array_is_static) {
+        if ((type1->flags & ARRAY_PACKED) || (type2->flags & ARRAY_PACKED)) {
+            return element_type_compare;
+        }
+        if ((type1->flags & ARRAY_STATIC) && (type2->flags & ARRAY_STATIC)) {
             return element_type_compare && (type1->array_size == type2->array_size);
         }
-        if (type1->array_is_static || type2->array_is_static)
+        if ((type1->flags & ARRAY_STATIC) || (type2->flags & ARRAY_STATIC))
             return false;
         
         return element_type_compare;

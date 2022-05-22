@@ -98,10 +98,21 @@ void CodeGenerator::gen(Stmt *stmt) {
 	(*this.*fn)(stmt);
 }
 
+/* Generates LLVM-IR for a function definition
+ * and converts parameters that are of static array type to tuple of array and size
+ */
 void CodeGenerator::gen_func_def(FunctionDefinition *stmt) {
 	std::vector<Type *> parameter_types(stmt->parameters.size());
 	for (int i = 0; i < stmt->parameters.size(); i++) {
-		parameter_types[i] = stmt->parameters[i]->type->llvm_type;
+	    auto ptype = stmt->parameters[i]->type;
+	    if (ptype->isarray() && (ptype->flags & ARRAY_PACKED)) {
+            parameter_types[i] = StructType::get(llvm_context, {
+                ptype->data_type->llvm_type,
+                u64_ty
+            });
+        } else {
+		    parameter_types[i] = ptype->llvm_type;
+        }
 	}
 	auto ret_type = gen_return_type(stmt->return_types);
 	auto fun_type = FunctionType::get(ret_type, parameter_types, stmt->flags & FUNCTION_VARARG);
@@ -123,6 +134,7 @@ void CodeGenerator::gen_func_def(FunctionDefinition *stmt) {
 	if (debug) {
 		std::vector<Metadata *> dbg_params;
 		dbg_params.push_back(convert_type_dbg(stmt->return_types[0]));
+		/* TODO(niko) update parameter type for static arrays */
 		for (int i = 0; i < parameter_types.size(); i++) {
 			dbg_params.push_back(convert_type_dbg(stmt->parameters[i]->type));
 		}
@@ -153,9 +165,27 @@ void CodeGenerator::gen_func_def(FunctionDefinition *stmt) {
 	int i = 0;
 	for (auto arg_it = fn->arg_begin(); arg_it != fn->arg_end(); arg_it++) {
 		auto par = stmt->parameters[i];
-		auto var = builder->CreateAlloca(par->type->llvm_type);
-		par->llvm_ref = var;
-		builder->CreateStore(&*arg_it, var);
+		auto ptype = par->type;
+
+		Value *var;
+	    if (ptype->isarray() && (ptype->flags & ARRAY_PACKED)) {
+            var = builder->CreateAlloca(ptype->data_type->llvm_type);
+            auto size_var = builder->CreateAlloca(u64_ty);
+
+            ptype->array_size_ref = size_var;
+            par->llvm_ref = var;
+
+            auto llvm_par = &*arg_it;
+            auto var_val = builder->CreateExtractValue(llvm_par, 0);
+            auto size_var_val = builder->CreateExtractValue(llvm_par, 1);
+
+            builder->CreateStore(var_val, var);
+            builder->CreateStore(size_var_val, size_var);
+        } else {
+            var = builder->CreateAlloca(par->type->llvm_type);
+            par->llvm_ref = var;
+            builder->CreateStore(&*arg_it, var);
+        }
 
 		if (debug) {
 			auto ln = stmt->location.line;
@@ -164,6 +194,7 @@ void CodeGenerator::gen_func_def(FunctionDefinition *stmt) {
 				dbg_scope, par->name, i, dbg_file, ln, convert_type_dbg(par->type),
 				true);
 
+            /* TODO(niko) update type for static arrays */
 			dbg_builder->insertDeclare(var, dbg_par, dbg_builder->createExpression(),
 				DILocation::get(dbg_scope->getContext(), ln, 0, dbg_scope), builder->GetInsertBlock());
 		}
@@ -229,7 +260,7 @@ void CodeGenerator::gen_var_def(VariableDefinition *stmt) {
 		if (var_type->isarray()) {
 			var_ptr = builder->CreateAlloca(var_type->llvm_type);
 
-            if (!var_type->array_is_static) {
+            if (var_type->flags & ARRAY_DYNAMIC) {
                 auto create_fn = get_builtin("qwr_array_create");
                 auto type_size = llvm_size_of(var_type->element_type->llvm_type);
                 type_size_llvm = ConstantInt::get(u64_ty, type_size);
@@ -260,7 +291,7 @@ void CodeGenerator::gen_var_def(VariableDefinition *stmt) {
             auto values = init_expr->values;
             auto target = var_ptr;
 
-            bool is_dynamic_array = var_type->isarray() && !var_type->array_is_static;
+            bool is_dynamic_array = var_type->isarray() && (var_type->flags & ARRAY_DYNAMIC);
             if (is_dynamic_array) {
                 auto init_fn = get_builtin("qwr_array_init");
                 auto data_fn = get_builtin("qwr_array_data");
@@ -275,7 +306,7 @@ void CodeGenerator::gen_var_def(VariableDefinition *stmt) {
 
                 QType *lit_type = var_type;
                 if (is_dynamic_array) {
-                    lit_type = typer->make_array(var_type->element_type, true, values.size());
+                    lit_type = typer->make_array(var_type->element_type, ARRAY_STATIC, values.size());
                 }
 
                 auto constant_value = builder->CreateBitCast(gen_constant_compound_lit_var(init_expr, lit_type), u8ptr_ty);
@@ -401,12 +432,7 @@ void CodeGenerator::gen_for(For *stmt) {
 		var_type = stmt->var->type->llvm_type;
 		Function *f;
 		if (ty->isarray()) {
-            if (ty->array_is_static) {
-                to = ConstantInt::get(size_t, ty->array_size);
-            } else {
-                f = get_builtin("qwr_array_len");
-                to = builder->CreateCall(f, builder->CreateLoad(iterator_val));
-            }
+		    to = get_array_length(ty, iterator_val);
 		} else {
 			f = get_builtin("strlen");
             to = builder->CreateCall(f, builder->CreateLoad(iterator_val));
@@ -771,8 +797,23 @@ Value *CodeGenerator::gen_func_call(FunctionCall *expr) {
     std::vector<Value *> arg_values{};
     auto target_fn = expr->target_func_decl->llvm_ref;
 
-    for (auto arg : expr->arguments)
-        arg_values.push_back(gen(arg));
+    for (auto arg : expr->arguments) {
+        auto arg_ty = arg->type;
+        if (arg_ty->isarray() && (arg_ty->flags & ARRAY_STATIC)) {
+            auto st_ty = StructType::get(llvm_context, {
+                arg_ty->data_type->llvm_type,
+                u64_ty
+            });
+
+            auto array_ref = gen_expr_target(arg);
+            auto array_val = builder->CreateBitCast(array_ref, arg_ty->data_type->llvm_type);
+            Value *val = builder->CreateInsertValue(UndefValue::get(st_ty), array_val, 0);
+            val = builder->CreateInsertValue(val, get_array_length(arg_ty, array_ref), 1);
+            arg_values.push_back(val); 
+        } else {
+            arg_values.push_back(gen(arg));
+        }
+    }
 
 	CallInst *call_inst = builder->CreateCall(target_fn, arg_values);
 
@@ -890,7 +931,9 @@ Value *CodeGenerator::gen_expr_target(Expr *expr) {
 }
 
 Value *CodeGenerator::gen_array_indexed(Value *arr, QType *arr_ty, Value *index) {
-    if (arr_ty->array_is_static) {
+    if (arr_ty->flags & ARRAY_PACKED) {
+        return builder->CreateInBoundsGEP(builder->CreateLoad(arr), { index });
+    } else if (arr_ty->flags & ARRAY_STATIC) {
         auto llvm_zero = ConstantInt::get(index->getType(), 0);
         return builder->CreateInBoundsGEP(arr, { llvm_zero, index });
     } else {
@@ -956,6 +999,19 @@ Constant *CodeGenerator::gen_constant_compound_lit(CompoundLiteral *expr, QType 
     }
 
     return constant_value;
+}
+
+Value *CodeGenerator::get_array_length(QType *type, llvm::Value *target) {
+    if (type->flags & ARRAY_STATIC) {
+        if (type->flags & ARRAY_PACKED) {
+            return builder->CreateLoad(type->array_size_ref);
+        }
+
+        return ConstantInt::get(u64_ty, type->array_size);
+    }
+
+    auto f = get_builtin("qwr_array_len");
+    return builder->CreateCall(f, builder->CreateLoad(target));
 }
 
 void CodeGenerator::emit_location_dbg(Stmt *stmt) {

@@ -1,6 +1,7 @@
 #ifndef TYPE_H_
 #define TYPE_H_
 
+#include <cstdint>
 #include <tuple>
 #include <string>
 #include <unordered_map>
@@ -12,6 +13,7 @@ struct Stmt;
 
 namespace llvm {
 	class Type;
+	class Value;
 	class PointerType;
 	class LLVMContext;
 };
@@ -41,6 +43,11 @@ enum QBaseType { /* order is very important */
 
 struct QType;
 typedef std::vector<std::pair<const char *, QType *>> struct_fields_type;
+typedef uint8_t u8;
+
+const u8 ARRAY_PACKED = 0x1;
+const u8 ARRAY_STATIC = 0x2;
+const u8 ARRAY_DYNAMIC = 0x4;
 
 struct QType {
 	QBaseType base;
@@ -56,8 +63,9 @@ struct QType {
 		struct {
 			QType *element_type;
 			QType *data_type;
-            bool array_is_static;
+            u8 flags;
             long int array_size;
+            llvm::Value *array_size_ref;
 		};
 
 		struct {
@@ -90,7 +98,7 @@ struct Typer {
 	void init(llvm::LLVMContext *_llvm_context, Messenger *_messenger);
 	
 	QType *make_pointer(QType *type);
-	QType *make_array(QType *type, bool is_static, long int size);
+	QType *make_array(QType *type, u8 flags, long int size);
 	QType *make_struct(const char *name, struct_fields_type *fields);
 	QType *make_nil();
 	QType *make_type(Token *token, QBaseType base, llvm::Type *llvm_type);
