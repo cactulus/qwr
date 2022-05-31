@@ -27,7 +27,7 @@ enums, structs \
 arrays
 
 ### Function Declaration / Definition
-Every qwr program has to have an main function without parameters and returning an s32.
+Every qwr program must have a main function without any parameters and returning an s32.
 ```Rust
 test :: (a i32) s32;
 
