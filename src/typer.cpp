@@ -90,14 +90,22 @@ void Typer::init(LLVMContext *_llvm_context, Messenger *_messenger) {
 }
 
 QType *Typer::make_pointer(QType *type) {
-	auto id = "*" + type->id;
-	if (has(id)) {
-		return get(id);
-	}
+	if (type->isfunction()) {
+		QType *ptty = new QType();
+		ptty->base = TYPE_POINTER;
+		ptty->element_type = type;
+		ptty->llvm_type = (Type *)PointerType::get(type->llvm_type, 0);
+		return ptty;
+	} else {
+		auto id = "*" + type->id;
+		if (has(id)) {
+			return get(id);
+		}
 
-	QType *ptty = make_type_intern(id, TYPE_POINTER, (Type *) PointerType::get(type->llvm_type, 0));
-	ptty->element_type = type;
-	return ptty;
+		QType *ptty = make_type_intern(id, TYPE_POINTER, (Type *)PointerType::get(type->llvm_type, 0));
+		ptty->element_type = type;
+		return ptty;
+	}
 }
 
 QType *Typer::make_array(QType *type, u8 flags, long int size) {

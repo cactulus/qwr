@@ -1411,23 +1411,9 @@ QType *Parser::parse_type() {
         return typer->make_array(parse_type(), flags, array_size);
 	}
 
-	QType *type;
-
-	if (eat_token_if('(')) {
-		type = parse_type();
-		if (!eat_token_if(')')) {
-			messenger->report(lexer.peek_token(), "Expected ')'");
-		}
-	} else {
-		type = typer->get(tok);
-		lexer.eat_token();
-	}
-
 	if (eat_token_if('(')) {
 		auto return_types = new std::vector<QType *>();
 		auto parameters = new std::vector<Variable *>();
-
-		return_types->push_back(type);
 
 		while (!eat_token_if(')')) {
 			auto var = new Variable(parse_type(), tok);
@@ -1436,10 +1422,15 @@ QType *Parser::parse_type() {
 			eat_token_if(',');
 		}
 
+		return_types->push_back(parse_type());
+
 		return typer->make_function(return_types, parameters, false);
 	}
 
-	return type;
+	if (!eat_token_if(TOKEN_ATOM)) {
+		messenger->report(tok, "Expected type name");
+	}
+	return typer->get(tok);
 }
 
 bool Parser::token_is_op(char op, int off) {
