@@ -1136,8 +1136,17 @@ Expr *Parser::parse_primary() {
 					possible_fn_ptr->type->ispointer() &&
 					possible_fn_ptr->type->element_type->isfunction()) {
 
-					return_types = *possible_fn_ptr->type->element_type->return_types;
+					QType *func_type = possible_fn_ptr->type->element_type;
+					return_types = *func_type->return_types;
 					from_function_pointer = true;
+
+					for (int i = 0; i < arguments.size(); ++i) {
+						Expr *e = arguments[i];
+
+						if (e->type->base == TYPE_NIL) {
+							e->type = (*func_type->parameters)[i]->type;
+						}
+					}
 				} else {
 					func_decl = get_func(tok, &arguments);
 
