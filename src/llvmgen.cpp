@@ -105,19 +105,6 @@ void CodeGenerator::gen(Stmt *stmt) {
 void CodeGenerator::gen_func_def(FunctionDefinition *stmt) {
 	auto parameters = *stmt->type->parameters;
 
-	std::vector<Type *> parameter_types(parameters.size());
-	for (int i = 0; i < parameters.size(); i++) {
-	    auto ptype = parameters[i]->type;
-	    if (ptype->isarray() && (ptype->flags & ARRAY_PACKED)) {
-            parameter_types[i] = StructType::get(llvm_context, {
-                ptype->data_type->llvm_type,
-                u64_ty
-            });
-        } else {
-		    parameter_types[i] = ptype->llvm_type;
-        }
-	}
-
 	auto fun_type = stmt->type->llvm_type;
 		
 	auto linkage = Function::ExternalLinkage;
@@ -139,7 +126,7 @@ void CodeGenerator::gen_func_def(FunctionDefinition *stmt) {
 		std::vector<Metadata *> dbg_params;
 		dbg_params.push_back(convert_type_dbg((*stmt->type->return_types)[0]));
 		/* TODO(niko) update parameter type for static arrays */
-		for (int i = 0; i < parameter_types.size(); i++) {
+		for (int i = 0; i < parameters.size(); i++) {
 			dbg_params.push_back(convert_type_dbg(parameters[i]->type));
 		}
 
@@ -266,12 +253,10 @@ void CodeGenerator::gen_var_def(VariableDefinition *stmt) {
 		auto var = stmt->var;
 		auto var_type = var->type;
 
-		Value *var_ptr = 0;
+		Value *var_ptr = builder->CreateAlloca(var_type->llvm_type);
 		Value *type_size_llvm = 0;
 
 		if (var_type->isarray()) {
-			var_ptr = builder->CreateAlloca(var_type->llvm_type);
-
             if (var_type->flags & ARRAY_DYNAMIC) {
                 auto create_fn = get_builtin("qwr_array_create");
                 auto type_size = llvm_size_of(var_type->element_type->llvm_type);
@@ -279,8 +264,8 @@ void CodeGenerator::gen_var_def(VariableDefinition *stmt) {
                 auto array_ptr = builder->CreateCall(create_fn, { type_size_llvm });
                 builder->CreateStore(array_ptr, var_ptr);
             }
-		} else {
-			var_ptr = builder->CreateAlloca(var_type->llvm_type);
+		} else if (var_type->isstruct()) {
+			gen_init_dynamic_arrays_in_struct(var_ptr, var_type);
 		}
 
         if (debug) {
@@ -298,59 +283,65 @@ void CodeGenerator::gen_var_def(VariableDefinition *stmt) {
 		    return;
         }
 
-        if (stmt->value->type->isarray() || stmt->value->type->isstruct()) {
-            auto init_expr = (CompoundLiteral *) stmt->value;
-            auto values = init_expr->values;
-            auto target = var_ptr;
+		auto value_type = stmt->value->type;
+		if (value_type->isarray() || value_type->isstruct()) {
+			if (stmt->value->kind() == COMPOUND_LIT) {
+				auto init_expr = (CompoundLiteral *)stmt->value;
+				auto values = init_expr->values;
+				auto target = var_ptr;
 
-            bool is_dynamic_array = var_type->isarray() && (var_type->flags & ARRAY_DYNAMIC);
-            if (is_dynamic_array) {
-                auto init_fn = get_builtin("qwr_array_init");
-                auto data_fn = get_builtin("qwr_array_data");
-                auto loaded_var_ptr = builder->CreateLoad(var_ptr);
-                auto llvm_values_count = ConstantInt::get(u64_ty, values.size());
+				bool is_dynamic_array = var_type->isarray() && (var_type->flags & ARRAY_DYNAMIC);
+				if (is_dynamic_array) {
+					auto init_fn = get_builtin("qwr_array_init");
+					auto data_fn = get_builtin("qwr_array_data");
+					auto loaded_var_ptr = builder->CreateLoad(var_ptr);
+					auto llvm_values_count = ConstantInt::get(u64_ty, values.size());
 
-                builder->CreateCall(init_fn, { loaded_var_ptr, llvm_values_count, type_size_llvm });
-                target = builder->CreateCall(data_fn, { loaded_var_ptr });
-            }
-            if (init_expr->lit_is_constant) {
-                target = builder->CreateBitCast(target, u8ptr_ty);
+					builder->CreateCall(init_fn, { loaded_var_ptr, llvm_values_count, type_size_llvm });
+					target = builder->CreateCall(data_fn, { loaded_var_ptr });
+				}
+				if (init_expr->lit_is_constant) {
+					target = builder->CreateBitCast(target, u8ptr_ty);
 
-                QType *lit_type = var_type;
-                if (is_dynamic_array) {
-                    lit_type = typer->make_array(var_type->element_type, ARRAY_STATIC, values.size());
-                }
+					QType *lit_type = var_type;
+					if (is_dynamic_array) {
+						lit_type = typer->make_array(var_type->element_type, ARRAY_STATIC, values.size());
+					}
 
-                auto constant_value = builder->CreateBitCast(gen_constant_compound_lit_var(init_expr, lit_type), u8ptr_ty);
+					auto constant_value = builder->CreateBitCast(gen_constant_compound_lit_var(init_expr, lit_type), u8ptr_ty);
 
-                int align = llvm_align_of(lit_type->llvm_type);
-                auto mem_cpy_size = llvm_size_of(lit_type->llvm_type);
-                builder->CreateMemCpy(target, align, constant_value, align, mem_cpy_size);
-            } else {
-                if (is_dynamic_array) {
-                    target = builder->CreatePointerCast(target, var_type->data_type->llvm_type);
-                }
-                
-                for (int i = 0; i < values.size(); ++i) {
-                    auto llvm_zero = ConstantInt::get(s32_ty, 0);
-                    auto llvm_index = ConstantInt::get(s32_ty, i);
-                    auto val = gen(values[i]);
-                    Value *tar;
-                    if (is_dynamic_array) {
-                        tar = builder->CreateInBoundsGEP(target, { llvm_index });
-                    } else {
-                        tar = builder->CreateInBoundsGEP(target, { llvm_zero, llvm_index });
-                    }
-                    builder->CreateStore(val, tar);
-                }
-            }
+					int align = llvm_align_of(lit_type->llvm_type);
+					auto mem_cpy_size = llvm_size_of(lit_type->llvm_type);
+					builder->CreateMemCpy(target, align, constant_value, align, mem_cpy_size);
+				} else {
+					if (is_dynamic_array) {
+						target = builder->CreatePointerCast(target, var_type->data_type->llvm_type);
+					}
 
-        } else {
-            auto val = gen(stmt->value);
-            if (val->getType()->isStructTy()) {
-                val = builder->CreateExtractValue(val, 0);
-            }
-            builder->CreateStore(val, var_ptr);
+					for (int i = 0; i < values.size(); ++i) {
+						auto llvm_zero = ConstantInt::get(s32_ty, 0);
+						auto llvm_index = ConstantInt::get(s32_ty, i);
+						auto val = gen(values[i]);
+						Value *tar;
+						if (is_dynamic_array) {
+							tar = builder->CreateInBoundsGEP(target, { llvm_index });
+						} else {
+							tar = builder->CreateInBoundsGEP(target, { llvm_zero, llvm_index });
+						}
+						builder->CreateStore(val, tar);
+					}
+				}
+			} else {
+				auto val = gen(stmt->value);
+				builder->CreateStore(val, var_ptr);
+			}
+
+		} else {
+			auto val = gen(stmt->value);
+			if (val->getType()->isStructTy()) {
+				val = builder->CreateExtractValue(val, 0);
+			}
+			builder->CreateStore(val, var_ptr);
         }
     }
 }
@@ -866,7 +857,13 @@ Value *CodeGenerator::gen_new(New *expr) {
     Value *type_size = ConstantInt::get(u64_ty, llvm_size_of(target_type));
 
     Value *mallocd = builder->CreateCall(malloc_fn, {type_size});
-    return builder->CreatePointerCast(mallocd, expr->type->llvm_type);
+	mallocd = builder->CreatePointerCast(mallocd, expr->type->llvm_type);
+
+	if (expr->alloc_type->isstruct()) {
+		gen_init_dynamic_arrays_in_struct(mallocd, expr->alloc_type);
+	}
+
+	return mallocd;
 }
 
 Value *CodeGenerator::gen_member(Member *expr) {
@@ -1007,6 +1004,27 @@ Constant *CodeGenerator::gen_constant_compound_lit(CompoundLiteral *expr, QType 
     return constant_value;
 }
 
+void CodeGenerator::gen_init_dynamic_arrays_in_struct(Value *struct_ref, QType *struct_type) {
+	int index = 0;
+
+	for (auto field : *struct_type->fields) {
+		auto field_type = field.second;
+
+		if (field_type->isarray() && field_type->flags & ARRAY_DYNAMIC) {
+			auto llvm_zero = ConstantInt::get(s32_ty, 0);
+			auto llvm_index = ConstantInt::get(s32_ty, index);
+			auto member_ref = builder->CreateInBoundsGEP(struct_ref, { llvm_zero, llvm_index });
+
+			auto create_fn = get_builtin("qwr_array_create");
+			auto type_size = llvm_size_of(field_type->element_type->llvm_type);
+			auto type_size_llvm = ConstantInt::get(u64_ty, type_size);
+			auto array_ptr = builder->CreateCall(create_fn, { type_size_llvm });
+			builder->CreateStore(array_ptr, member_ref);
+		}
+
+		index++;
+	}
+}
 Value *CodeGenerator::get_array_length(QType *type, llvm::Value *target) {
     if (type->flags & ARRAY_STATIC) {
         if (type->flags & ARRAY_PACKED) {

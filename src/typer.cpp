@@ -160,9 +160,17 @@ QType *Typer::make_function(std::vector<QType *> *return_types_ptr, std::vector<
 	auto return_types = *return_types_ptr;
 	auto parameters = *parameters_ptr;
 
-	std::vector<Type *> p_types;
-	for (Variable *par : parameters) {
-		p_types.push_back(par->type->llvm_type);
+	std::vector<Type *> p_types(parameters.size());
+	for (int i = 0; i < parameters.size(); i++) {
+		auto ptype = parameters[i]->type;
+		if (ptype->isarray() && (ptype->flags & ARRAY_PACKED)) {
+			p_types[i] = StructType::get(*llvm_context, {
+				ptype->data_type->llvm_type,
+				get("u64")->llvm_type
+				});
+		} else {
+			p_types[i] = ptype->llvm_type;
+		}
 	}
 
 	Type *llvm_return_type;

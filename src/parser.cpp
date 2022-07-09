@@ -703,23 +703,24 @@ Stmt *Parser::parse_return() {
             eat_token_if(',');
             return_values.push_back(parse_expr());
         }
-    }
 
-    if (return_values.size() != return_types.size()) {
-        messenger->report(tok, "Return values do not match return types of function");
-    } else {
-        for (int i = 0; i < return_values.size(); ++i) {
-            auto ret_val = return_values[i];
-            auto ret_type = return_types[i];
+		if (return_values.size() != return_types.size()) {
+			messenger->report(tok, "Return values do not match return types of function");
+		} else {
+			for (int i = 0; i < return_values.size(); ++i) {
+				auto ret_val = return_values[i];
+				auto ret_type = return_types[i];
 
-            if (!typer->compare(ret_val->type, ret_type)) {
-                if (typer->can_convert_implicit(ret_val->type, ret_type)) {
-                    return_values[i] = cast(ret_val, ret_type);
-                } else {
-                    messenger->report(tok, "Return values do not match return types of function");
-                }
-            }
-        }
+				if (!typer->compare(ret_val->type, ret_type)) {
+					if (typer->can_convert_implicit(ret_val->type, ret_type)) {
+						return_values[i] = cast(ret_val, ret_type);
+					} else {
+						messenger->report(tok, "Return values do not match return types of function");
+					}
+				}
+			}
+		}
+
     }
 
     auto stmt = new Return(tok);
@@ -1142,9 +1143,12 @@ Expr *Parser::parse_primary() {
 
 					for (int i = 0; i < arguments.size(); ++i) {
 						Expr *e = arguments[i];
+						Variable *par = (*func_type->parameters)[i];
 
-						if (e->type->base == TYPE_NIL) {
-							e->type = (*func_type->parameters)[i]->type;
+						if (!typer->compare(e->type, par->type)) {
+							if (typer->can_convert_implicit(e->type, par->type)) {
+								arguments[i] = cast(e, par->type);
+							}
 						}
 					}
 				} else {

@@ -68,6 +68,8 @@ struct CodeGenerator {
 
     llvm::Value *gen_constant_compound_lit_var(CompoundLiteral *expr, QType *var_type);
     llvm::Constant *gen_constant_compound_lit(CompoundLiteral *expr, QType *var_type);
+	
+	void gen_init_dynamic_arrays_in_struct(llvm::Value *struct_ref, QType *struct_type);
 
     llvm::Value *get_array_length(QType *type, llvm::Value *target);
 
