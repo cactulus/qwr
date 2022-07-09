@@ -31,7 +31,7 @@ static bool is_not_quote(char c);
 const char *escape_str_lit(const char *text);
 static char make_escape(char c);
 
-const char *operator_chars = "+-=*/();,.{}&|:<>![]@%";
+const char *operator_chars = "+-=*/();,.{}&|:<>![]@%^";
 
 static std::stack<LexerInfo> backups;
 

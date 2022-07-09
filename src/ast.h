@@ -4,7 +4,6 @@
 #include <vector>
 
 #include "lexer.h"
-#include "typer.h"
 
 typedef uint8_t u8;
 
@@ -82,8 +81,12 @@ struct FunctionDefinition;
 struct FunctionCall : Expr {
     using Expr::Expr;
 
-    FunctionDefinition *target_func_decl;
+	union {
+		FunctionDefinition *target_func_decl;
+		Variable *function_pointer;
+	};
     std::vector<Expr *> arguments;
+	bool from_function_pointer;
 
     virtual ExprKind kind() override {
         return FUNCTION_CALL;
@@ -145,7 +148,10 @@ struct Cast : Expr {
 struct Unary : Expr {
     using Expr::Expr;
 
-    Expr *target;
+	union {
+		Expr *target;
+		FunctionDefinition *target_fn; /* for function pointer referencing*/
+	};
     unsigned char op;
     bool ispost;
 
@@ -286,11 +292,10 @@ struct VariableDefinition : Stmt {
 struct FunctionDefinition : Stmt{
     using Stmt::Stmt;
 
+	QType *type;
     llvm::Function *llvm_ref;
     const char *mangled_name;
     const char *unmangled_name;
-    std::vector<QType *> return_types;
-    std::vector<Variable *> parameters;
     std::vector<Stmt *> body;
     u8 flags;
     

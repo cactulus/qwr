@@ -4,6 +4,7 @@
 #include <llvm/IR/DerivedTypes.h>
 
 #include "typer.h"
+#include "ast.h"
 
 using namespace llvm;
 
@@ -45,6 +46,10 @@ bool QType::isstring() {
 
 bool QType::isarray() {
 	return base == TYPE_ARRAY;
+}
+
+bool QType::isfunction() {
+	return base == TYPE_FUNCTION;
 }
 
 bool QType::is_int_in_llvm() {
@@ -141,6 +146,37 @@ QType *Typer::make_struct(const char *name, struct_fields_type *fields) {
     ty->fields = fields;
 
     return ty;
+}
+
+QType *Typer::make_function(std::vector<QType *> *return_types_ptr, std::vector<Variable *> *parameters_ptr, bool vararg) {
+	auto return_types = *return_types_ptr;
+	auto parameters = *parameters_ptr;
+
+	std::vector<Type *> p_types;
+	for (Variable *par : parameters) {
+		p_types.push_back(par->type->llvm_type);
+	}
+
+	Type *llvm_return_type;
+	if (return_types.size() == 1) {
+		llvm_return_type = return_types[0]->llvm_type;
+	} else {
+		std::vector<Type *> llvm_return_types(types.size());
+		for (int i = 0; i < types.size(); i++) {
+			llvm_return_types[i] = return_types[i]->llvm_type;
+		}
+
+		llvm_return_type = StructType::get(*llvm_context, llvm_return_types);
+	}
+	
+	auto fn_type = FunctionType::get(llvm_return_type, p_types, vararg);
+
+	auto ty = new QType();
+	ty->base = TYPE_FUNCTION;
+	ty->llvm_type = fn_type;
+	ty->return_types = return_types_ptr;
+	ty->parameters = parameters_ptr;
+	return ty;
 }
 
 QType *Typer::make_nil() {
@@ -257,6 +293,30 @@ bool Typer::compare(QType *type1, QType *type2) {
         return compare(type1->element_type, type2->element_type);
     }
 
+	if (b1 == TYPE_FUNCTION && b2 == TYPE_FUNCTION) {
+		if (type1->return_types->size() != type2->return_types->size()) {
+			return false;
+		}
+
+		for (int i = 0; i < type1->return_types->size(); ++i) {
+			if (!compare((*type1->return_types)[i], (*type2->return_types)[i])) {
+				return false;
+			}
+		}
+
+		if (type1->parameters->size() != type2->parameters->size()) {
+			return false;
+		}
+
+		for (int i = 0; i < type1->parameters->size(); ++i) {
+			if (!compare((*type1->parameters)[i]->type, (*type2->parameters)[i]->type)) {
+				return false;
+			}
+		}
+
+		return true;
+	}
+
 	if (b1 == TYPE_NIL) {
 		*type1 = *type2;
 		return true;
@@ -306,11 +366,24 @@ std::string Typer::mangle_type(QType *type) {
 	if (type->isstruct()) {
 		return type->struct_name;
 	}
+
 	if (type->isarray()) {
 		return "a" + mangle_type(type->element_type);
 	}
+
 	if (type->ispointer()) {
 		return "p" + mangle_type(type->element_type);
+	}
+
+	if (type->isfunction()) {
+		std::string ty_str = "F";
+		for (QType *ty : *type->return_types) {
+			ty_str += mangle_type(ty);
+		}
+		for (Variable *ty : *type->parameters) {
+			ty_str += mangle_type(ty->type);
+		}
+		return ty_str;
 	}
 
 	assert(0 && "Tried to call mangle_type on type that is not implemented");

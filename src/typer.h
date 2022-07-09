@@ -39,6 +39,7 @@ enum QBaseType { /* order is very important */
 	TYPE_STRING,
 	TYPE_ARRAY,
 	TYPE_NIL,
+	TYPE_FUNCTION,
 };
 
 struct QType;
@@ -49,12 +50,18 @@ const u8 ARRAY_PACKED = 0x1;
 const u8 ARRAY_STATIC = 0x2;
 const u8 ARRAY_DYNAMIC = 0x4;
 
+struct Variable;
 struct QType {
 	QBaseType base;
 	llvm::Type *llvm_type;
 	std::string id;
 
 	union {
+		struct {
+			std::vector<QType *> *return_types;
+			std::vector<Variable *> *parameters;
+		};
+
 		struct {
         	std::vector<const char *> *categories;
 			std::vector<unsigned int> *indices;
@@ -84,6 +91,7 @@ struct QType {
     bool ischar();
     bool isstring();
 	bool isarray();
+	bool isfunction();
 
 	/* returns true if in the end, it is an int type in llvm */
 	bool is_int_in_llvm();
@@ -100,6 +108,7 @@ struct Typer {
 	QType *make_pointer(QType *type);
 	QType *make_array(QType *type, u8 flags, long int size);
 	QType *make_struct(const char *name, struct_fields_type *fields);
+	QType *make_function(std::vector<QType *> *return_types, std::vector<Variable *> *parameters, bool vararg);
 	QType *make_nil();
 	QType *make_type(Token *token, QBaseType base, llvm::Type *llvm_type);
 	QType *make_type_intern(const std::string &id, QBaseType base, llvm::Type *llvm_type);

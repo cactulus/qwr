@@ -322,10 +322,10 @@ void Parser::parse_using() {
         }
         
         bool dereference = false;
-        if (st_ty->ispointer() && st_ty->element_type->isstruct()) {
-            st_ty = st_ty->element_type;
-            dereference = true;
-        } else if (!st_ty->isstruct()) {
+		if (st_ty->ispointer() && st_ty->element_type->isstruct()) {
+			st_ty = st_ty->element_type;
+			dereference = true;
+		} else if (!st_ty->isstruct()) {
             messenger->report(tok, "Using only works on enum types and variables of struct type!");
         }
 
@@ -352,6 +352,9 @@ void Parser::parse_using() {
 }
 
 Stmt *Parser::parse_func_def(Token *name, u8 flags) {
+	auto return_types = new std::vector<QType *>();
+	auto parameters = new std::vector<Variable *>();
+
     scope_push();
 
 	auto stmt = new FunctionDefinition(name);
@@ -361,21 +364,23 @@ Stmt *Parser::parse_func_def(Token *name, u8 flags) {
     auto cname = name->lexeme;
     stmt->unmangled_name = cname;
 
-    parse_function_parameters(stmt, true);
-    auto mname = mangle_func(stmt);
-    stmt->mangled_name = mname;
+    parse_function_parameters(stmt, parameters, true);
 
     if (eat_token_if('{')) {
-        stmt->return_types.push_back(typer->get("void"));
+        return_types->push_back(typer->get("void"));
     } else {
         auto return_type = parse_type();
-        stmt->return_types.push_back(return_type);
+        return_types->push_back(return_type);
 
         while (!eat_token_if('{')) {
             eat_token_if(',');
-            stmt->return_types.push_back(parse_type());
+            return_types->push_back(parse_type());
         }
     }
+
+	stmt->type = typer->make_function(return_types, parameters, stmt->flags & FUNCTION_VARARG);
+	auto mname = mangle_func(stmt);
+	stmt->mangled_name = mname;
 
     while (!eat_token_if('}')) {
         stmt->body.push_back(parse_stmt());
@@ -387,31 +392,36 @@ Stmt *Parser::parse_func_def(Token *name, u8 flags) {
 }
 
 Stmt *Parser::parse_extern_func_def(Token *name) {
+	auto return_types = new std::vector<QType *>();
+	auto parameters = new std::vector<Variable *>();
+
     auto stmt = new FunctionDefinition(name);
 	stmt->flags = FUNCTION_EXTERN;
 
     auto cname = name->lexeme;
     stmt->unmangled_name = cname;
 
-    parse_function_parameters(stmt, false);
-
-    auto mname = mangle_func(stmt);
-    stmt->mangled_name = mname;
+    parse_function_parameters(stmt, parameters, false);
 
     if (eat_token_if(';')) {
-        stmt->return_types.push_back(typer->get("void"));
+        return_types->push_back(typer->get("void"));
     } else {
         auto return_type = parse_type();
-        stmt->return_types.push_back(return_type);
+        return_types->push_back(return_type);
 
         eat_token_if(';');
     }
+
+
+	stmt->type = typer->make_function(return_types, parameters, stmt->flags & FUNCTION_VARARG);
+	auto mname = mangle_func(stmt);
+	stmt->mangled_name = mname;
 
     insert_func(name, mname, stmt, true);
     return stmt;
 }
 
-void Parser::parse_function_parameters(FunctionDefinition *stmt, bool add_to_scope) {
+void Parser::parse_function_parameters(FunctionDefinition *stmt, std::vector<Variable *> *parameters, bool add_to_scope) {
 	if (!eat_token_if('(')) {
 		messenger->report(lexer.peek_token(), "Expected ( after function name");
 	}
@@ -440,7 +450,7 @@ void Parser::parse_function_parameters(FunctionDefinition *stmt, bool add_to_sco
 
 		auto var = new Variable(ptype, tok);
 		var->name = pname;
-		stmt->parameters.push_back(var);
+		parameters->push_back(var);
 
 		if (add_to_scope) {
 			scope->add(tok, var);
@@ -469,11 +479,19 @@ Stmt *Parser::parse_variable_definition(Token *name_token, u8 flags) {
 Stmt *Parser::parse_variable_definition_type(Token *name_token, u8 flags) {
     QType *type = parse_type();
 
+	if (type->isfunction()) {
+		messenger->report(name_token, "Function type is not valid for variable.");
+	}
+
     if (eat_token_if(';')) {
         if (type->isarray() && (type->flags & ARRAY_STATIC) && type->array_size == -1) {
             messenger->report(name_token, "Cannot declare variable of static array type with undefined array length");
         }
         
+		if (flags & VAR_CONST) {
+			messenger->report(name_token, "Constant variables have to initialized");
+		}
+
         auto stmt = new VariableDefinition(name_token);
         stmt->var = new Variable(type, name_token);
         stmt->var->name = name_token->lexeme;
@@ -504,7 +522,7 @@ Stmt *Parser::parse_variable_definition_type(Token *name_token, u8 flags) {
             messenger->report(name_token, "Specified type of variable and type of value do not match");
         }
     }
-
+	
 	return stmt;
 }
 
@@ -551,7 +569,7 @@ Stmt *Parser::parse_multiple_variable_definition(Token *name_token) {
     auto expr_tok = lexer.peek_token();
     auto val = parse_function_call();
 
-    auto return_types = val->target_func_decl->return_types;
+    auto return_types = *val->target_func_decl->type->return_types;
     if (var_names.size() > return_types.size()) {
         messenger->report(expr_tok, "Can't assign more variables then function returns values");
     }
@@ -674,7 +692,7 @@ Stmt *Parser::parse_for() {
 }
 
 Stmt *Parser::parse_return() {
-    auto return_types = current_function->return_types;
+    auto return_types = *current_function->type->return_types;
     std::vector<Expr *> return_values;
     auto tok = lexer.peek_token();
 
@@ -869,23 +887,39 @@ Expr *Parser::parse_cast() {
 Expr *Parser::parse_unary() {
     auto tok = lexer.peek_token();
 
-    if (eat_token_if('&')) {
-        auto target = parse_postfix();
-        auto target_kind = target->kind();
+	if (eat_token_if('&')) {
+		auto target = parse_postfix();
+		auto target_kind = target->kind();
 
-        if (target_kind != VARIABLE &&
-            target_kind != MEMBER &&
-            target_kind != INDEXED) {
-            messenger->report(tok, "Can't reference non variable");
-        }
+		if (target_kind != VARIABLE &&
+			target_kind != MEMBER &&
+			target_kind != INDEXED) {
+			messenger->report(tok, "Can't reference non variable");
+		}
 
-        auto target_type = target->type;
+		auto target_type = target->type;
 
-		auto expr = new Unary(typer->make_pointer(target_type), tok); 
-        expr->target = target;
-        expr->op = '&';
+		auto expr = new Unary(typer->make_pointer(target_type), tok);
+		expr->target = target;
+		expr->op = '&';
 
-        return expr;
+		return expr;
+	} else if (eat_token_if('^')) {
+		tok = lexer.peek_token();
+		if (!eat_token_if(TOKEN_ATOM)) {
+			messenger->report(tok, "Expected function name after '^'");
+		}
+
+		FunctionDefinition *fn = find_func(tok->lexeme);
+		if (!fn) {
+			messenger->report(tok, "Function not found");
+		}
+
+		auto expr = new Unary(typer->make_pointer(fn->type), tok);
+		expr->target_fn = fn;
+		expr->op = '^';
+
+		return expr;
     } else if (eat_token_if('*')) {
         auto target = parse_unary();
 
@@ -1093,12 +1127,34 @@ Expr *Parser::parse_primary() {
 				check_builtin_func(tok, expr);
 				return expr;
 			} else {
-				auto func_decl = get_func(tok, &arguments);
+				Variable *possible_fn_ptr = scope->find_null(unmangled_name);
+				FunctionDefinition *func_decl = 0;
+				std::vector<QType *> return_types;
+				bool from_function_pointer;
 
-				auto return_types = func_decl->return_types;
+				if (possible_fn_ptr &&
+					possible_fn_ptr->type->ispointer() &&
+					possible_fn_ptr->type->element_type->isfunction()) {
+
+					return_types = *possible_fn_ptr->type->element_type->return_types;
+					from_function_pointer = true;
+				} else {
+					func_decl = get_func(tok, &arguments);
+
+					return_types = *func_decl->type->return_types;
+					from_function_pointer = false;
+				}
+
 				auto expr = new FunctionCall(return_types[0], tok);
 				expr->arguments = arguments;
-				expr->target_func_decl = func_decl;
+				expr->from_function_pointer = from_function_pointer;
+
+				if (from_function_pointer) {
+					expr->function_pointer = possible_fn_ptr;
+				} else {
+					expr->target_func_decl = func_decl;
+				}
+
 				return expr;
 			}
         }
@@ -1246,7 +1302,7 @@ FunctionCall *Parser::parse_function_call() {
     auto unmangled_name = tok->lexeme;
     auto func_decl = get_func(tok, &arguments);
 
-    auto return_types = func_decl->return_types;
+    auto return_types = *func_decl->type->return_types;
     auto expr = new FunctionCall(return_types[0], tok);
     expr->arguments = arguments;
     expr->target_func_decl = func_decl;
@@ -1329,13 +1385,12 @@ bool Parser::expr_is_constant(Expr *expr) {
 
 QType *Parser::parse_type() {
 	auto tok = lexer.peek_token();
-	if (tok->type == '*') {
-		lexer.eat_token();
+
+	if (eat_token_if('*')) {
 		return typer->make_pointer(parse_type());
 	}
-    if (tok->type == '[') {
-        lexer.eat_token();
-        
+
+	if (eat_token_if('[')) {
         u8 flags = 0;
         long int array_size = -1;
         
@@ -1355,11 +1410,36 @@ QType *Parser::parse_type() {
         
         return typer->make_array(parse_type(), flags, array_size);
 	}
-	if (tok->type != TOKEN_ATOM) {
-		messenger->report(tok, "Expected type");
+
+	QType *type;
+
+	if (eat_token_if('(')) {
+		type = parse_type();
+		if (!eat_token_if(')')) {
+			messenger->report(lexer.peek_token(), "Expected ')'");
+		}
+	} else {
+		type = typer->get(tok);
+		lexer.eat_token();
 	}
-	lexer.eat_token();
-	return typer->get(tok);
+
+	if (eat_token_if('(')) {
+		auto return_types = new std::vector<QType *>();
+		auto parameters = new std::vector<Variable *>();
+
+		return_types->push_back(type);
+
+		while (!eat_token_if(')')) {
+			auto var = new Variable(parse_type(), tok);
+			parameters->push_back(var);
+
+			eat_token_if(',');
+		}
+
+		return typer->make_function(return_types, parameters, false);
+	}
+
+	return type;
 }
 
 bool Parser::token_is_op(char op, int off) {
@@ -1401,7 +1481,7 @@ const char *Parser::mangle_func(FunctionDefinition *stmt) {
 	}
 	std::stringstream ss;
 	ss << unmangled_name;
-	for (auto par : stmt->parameters) {
+	for (auto par : *stmt->type->parameters) {
 		ss << "_" << typer->mangle_type(par->type);
 	}
 
@@ -1480,7 +1560,7 @@ FunctionDefinition *Parser::get_func(Token *name_token, std::vector<Expr *> *arg
         if (strcmp(decl->unmangled_name, unmangled_name) != 0)
             continue;
 
-        auto decl_args = decl->parameters;
+        auto decl_args = *decl->type->parameters;
         int decl_ac = decl_args.size();
         int call_ac = arguments->size();
         bool vararg = decl->flags & FUNCTION_VARARG;
@@ -1509,8 +1589,18 @@ FunctionDefinition *Parser::get_func(Token *name_token, std::vector<Expr *> *arg
         }
     }
 
-    messenger->report(name_token, "Function does not exists");
+    messenger->report(name_token, "Function does not exist");
     return 0;
+}
+
+FunctionDefinition *Parser::find_func(const char *name) {
+	for (auto key : functions) {
+		auto decl = key.second;
+		if (strcmp(decl->unmangled_name, name) == 0)
+			return decl;
+	}
+
+	return 0;
 }
 
 FunctionDefinition *Parser::get_func(const char *name) {

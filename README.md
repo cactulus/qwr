@@ -132,6 +132,21 @@ print_arr(arr);
 delete arr;
 ```
 
+## Function pointers
+```Rust
+typedef addf int(int, int);
+add :: (a int, b int) int {
+	return a + b;
+}
+
+main :: () int {
+	a: *addf = ^add;
+	a(2, 4);
+
+	return 0;
+}
+```
+
 ## Standard Library
 Files in /std
 ```Rust
@@ -142,6 +157,14 @@ use "glfw";
 ## Specify Linker Options (Linux only)
 ```Rust
 qwr "-lglfw"; // used for example in glfw standard library
+```
+
+## Optional Code compilation
+```Rust
+#if FLAG <STMT>
+
+#if windows use "gl_win";
+#if unix use "gl";
 ```
 
 ## Examples

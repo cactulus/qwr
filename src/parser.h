@@ -66,7 +66,7 @@ struct Parser {
 	Stmt *parse_delete();
 	Stmt *try_parse_atom();
 
-	void parse_function_parameters(FunctionDefinition *stmt, bool add_to_scope);
+	void parse_function_parameters(FunctionDefinition *stmt, std::vector<Variable *> *parameters, bool add_to_scope);
 
 	Expr *parse_expr(int prec=1);
 	Expr *parse_binary(int prec);
@@ -97,6 +97,7 @@ struct Parser {
 
     void insert_func(Token *name_token, const char *mangled_name, FunctionDefinition *func_decl, bool is_extern=false);
     FunctionDefinition *get_func(Token *name_token, std::vector<Expr *> *arguments);
+	FunctionDefinition *find_func(const char *name);
     FunctionDefinition *get_func(const char *name);
 
 	const char *mangle_func(FunctionDefinition *stmt);

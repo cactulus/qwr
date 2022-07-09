@@ -4,6 +4,7 @@
 #include <sstream>
 
 #include <llvm/MC/SubtargetFeature.h>
+#include <llvm/Support/AlignOf.h>
 #include <llvm/Support/FileSystem.h>
 #include <llvm/Support/ToolOutputFile.h>
 #include <llvm/Support/Host.h>
@@ -102,9 +103,11 @@ void CodeGenerator::gen(Stmt *stmt) {
  * and converts parameters that are of static array type to tuple of array and size
  */
 void CodeGenerator::gen_func_def(FunctionDefinition *stmt) {
-	std::vector<Type *> parameter_types(stmt->parameters.size());
-	for (int i = 0; i < stmt->parameters.size(); i++) {
-	    auto ptype = stmt->parameters[i]->type;
+	auto parameters = *stmt->type->parameters;
+
+	std::vector<Type *> parameter_types(parameters.size());
+	for (int i = 0; i < parameters.size(); i++) {
+	    auto ptype = parameters[i]->type;
 	    if (ptype->isarray() && (ptype->flags & ARRAY_PACKED)) {
             parameter_types[i] = StructType::get(llvm_context, {
                 ptype->data_type->llvm_type,
@@ -114,15 +117,16 @@ void CodeGenerator::gen_func_def(FunctionDefinition *stmt) {
 		    parameter_types[i] = ptype->llvm_type;
         }
 	}
-	auto ret_type = gen_return_type(stmt->return_types);
-	auto fun_type = FunctionType::get(ret_type, parameter_types, stmt->flags & FUNCTION_VARARG);
+
+	auto fun_type = stmt->type->llvm_type;
+		
 	auto linkage = Function::ExternalLinkage;
 
 	auto name = (stmt->flags & FUNCTION_EXTERN) ?
 				stmt->unmangled_name :
 				stmt->mangled_name;
 
-	auto fn = Function::Create(fun_type, linkage, name, llvm_module);
+	auto fn = Function::Create((FunctionType *) fun_type, linkage, name, llvm_module);
     stmt->llvm_ref = fn;
 
 	if (stmt->flags & FUNCTION_EXTERN) {
@@ -133,10 +137,10 @@ void CodeGenerator::gen_func_def(FunctionDefinition *stmt) {
 
 	if (debug) {
 		std::vector<Metadata *> dbg_params;
-		dbg_params.push_back(convert_type_dbg(stmt->return_types[0]));
+		dbg_params.push_back(convert_type_dbg((*stmt->type->return_types)[0]));
 		/* TODO(niko) update parameter type for static arrays */
 		for (int i = 0; i < parameter_types.size(); i++) {
-			dbg_params.push_back(convert_type_dbg(stmt->parameters[i]->type));
+			dbg_params.push_back(convert_type_dbg(parameters[i]->type));
 		}
 
 		auto dbg_fun_type = dbg_builder->createSubroutineType(
@@ -164,7 +168,7 @@ void CodeGenerator::gen_func_def(FunctionDefinition *stmt) {
 
 	int i = 0;
 	for (auto arg_it = fn->arg_begin(); arg_it != fn->arg_end(); arg_it++) {
-		auto par = stmt->parameters[i];
+		auto par = parameters[i];
 		auto ptype = par->type;
 
 		Value *var;
@@ -222,10 +226,12 @@ void CodeGenerator::gen_var_def(VariableDefinition *stmt) {
 		llvm_module->getOrInsertGlobal(var_name, stmt->var->type->llvm_type);
 		auto var = llvm_module->getGlobalVariable(var_name);
 
-		var->setConstant(stmt->flags & VAR_CONST);
-		
-        auto init = dyn_cast<Constant>(gen(stmt->value));
-        var->setInitializer(init);
+		if (stmt->value) {
+			var->setConstant(stmt->flags & VAR_CONST);
+
+			auto init = dyn_cast<Constant>(gen(stmt->value));
+			var->setInitializer(init);
+		}
 
 		stmt->var->llvm_ref = var;
     } else if (stmt->flags & VAR_MULTIPLE) {
@@ -311,7 +317,7 @@ void CodeGenerator::gen_var_def(VariableDefinition *stmt) {
 
                 auto constant_value = builder->CreateBitCast(gen_constant_compound_lit_var(init_expr, lit_type), u8ptr_ty);
 
-                MaybeAlign align(llvm_align_of(lit_type->llvm_type));
+                int align = llvm_align_of(lit_type->llvm_type);
                 auto mem_cpy_size = llvm_size_of(lit_type->llvm_type);
                 builder->CreateMemCpy(target, align, constant_value, align, mem_cpy_size);
             } else {
@@ -533,7 +539,7 @@ Value *CodeGenerator::gen_binary(Binary *expr) {
 	Instruction::BinaryOps op;
 	CmpInst::Predicate cmpop;
 	Value *new_value = 0;
-	auto ty = expr->type;
+	auto ty = expr->lhs->type;
 	bool is_ptr = ty->ispointer();
 
     if (ty->isuint() || is_ptr) {
@@ -718,6 +724,9 @@ Value *CodeGenerator::gen_unary(Unary *expr) {
         case '&': {
             return gen_expr_target(expr->target);
         } break;
+		case '^': {
+			return expr->target_fn->llvm_ref;
+		} break;
         case '!': {
             auto target = gen(expr->target);
             return builder->CreateNot(target);
@@ -795,7 +804,6 @@ Value *CodeGenerator::gen_string_lit(QStringLiteral *expr) {
 
 Value *CodeGenerator::gen_func_call(FunctionCall *expr) {
     std::vector<Value *> arg_values{};
-    auto target_fn = expr->target_func_decl->llvm_ref;
 
     for (auto arg : expr->arguments) {
         auto arg_ty = arg->type;
@@ -815,9 +823,13 @@ Value *CodeGenerator::gen_func_call(FunctionCall *expr) {
         }
     }
 
-	CallInst *call_inst = builder->CreateCall(target_fn, arg_values);
-
-    return call_inst;
+	if (expr->from_function_pointer) {
+		auto loaded = builder->CreateLoad(expr->function_pointer->llvm_ref);
+		return builder->CreateCall(loaded, arg_values);
+	} else {
+		auto target_fn = expr->target_func_decl->llvm_ref;
+		return builder->CreateCall(target_fn, arg_values);
+	}
 }
 
 Value *CodeGenerator::gen_compare_zero(CompareZero *expr) {
@@ -949,18 +961,6 @@ Value *CodeGenerator::gen_array_indexed(Value *arr, QType *arr_ty, Value *index)
 
 Value *CodeGenerator::gen_string_indexed(Value *str, Value *index) {
 	return builder->CreateInBoundsGEP(str, { index });
-}
-
-Type *CodeGenerator::gen_return_type(std::vector<QType *> types) {
-    if (types.size() == 1)
-        return types[0]->llvm_type;
-
-	std::vector<Type *> return_types(types.size());
-	for (int i = 0; i < types.size(); i++) {
-		return_types[i] = types[i]->llvm_type;
-	}
-
-    return StructType::get(llvm_context, return_types);
 }
 
 Type *CodeGenerator::gen_return_type(std::vector<Expr *> types) {
