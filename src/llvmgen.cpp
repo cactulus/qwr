@@ -223,7 +223,8 @@ void CodeGenerator::gen_var_def(VariableDefinition *stmt) {
 	if (stmt->flags & VAR_GLOBAL) {
 		auto var_name = stmt->var->name;
 
-		llvm_module->getOrInsertGlobal(var_name, stmt->var->type->llvm_type);
+		QType *type = stmt->var->type;
+		llvm_module->getOrInsertGlobal(var_name, type->llvm_type);
 		auto var = llvm_module->getGlobalVariable(var_name);
 
 		if (stmt->value) {
@@ -231,6 +232,11 @@ void CodeGenerator::gen_var_def(VariableDefinition *stmt) {
 
 			auto init = dyn_cast<Constant>(gen(stmt->value));
 			var->setInitializer(init);
+		} else {
+			var->setExternallyInitialized(false);
+			if (type->ispointer()) {
+				var->setInitializer(ConstantPointerNull::get((PointerType *) type->llvm_type));
+			}
 		}
 
 		stmt->var->llvm_ref = var;

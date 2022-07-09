@@ -229,3 +229,6 @@ extern glfwGetKey :: (window GLFWwindow, key int) int;
 extern glfwGetTime :: () f64;
 extern glfwSetInputMode :: (window GLFWwindow, mode int, value int);
 extern glfwGetCursorPos :: (window GLFWwindow, xpos *f64, ypos *f64);
+extern glfwGetFramebufferSize :: (window GLFWwindow, width *int, height *int);
+extern glfwSetWindowUserPointer :: (window GLFWwindow, pointer ptr);
+extern glfwGetWindowUserPointer :: (window GLFWwindow) ptr;
