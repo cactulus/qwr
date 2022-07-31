@@ -391,6 +391,10 @@ std::string Typer::mangle_type(QType *type) {
 		return "p" + mangle_type(type->element_type);
 	}
 
+	if (type->base == TYPE_VOID) {
+		return "v";
+	}
+
 	if (type->isfunction()) {
 		std::string ty_str = "F";
 		for (QType *ty : *type->return_types) {

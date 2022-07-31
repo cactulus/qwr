@@ -223,6 +223,8 @@ void CodeGenerator::gen_var_def(VariableDefinition *stmt) {
 			var->setExternallyInitialized(false);
 			if (type->ispointer()) {
 				var->setInitializer(ConstantPointerNull::get((PointerType *) type->llvm_type));
+			} else if (type->isarray() && type->flags & ARRAY_STATIC) {
+				var->setInitializer(ConstantArray::getNullValue(type->llvm_type));
 			}
 		}
 

@@ -212,8 +212,13 @@ GLFW_KEY_RIGHT_CONTROL :@ 345;
 GLFW_KEY_RIGHT_ALT :@ 346;
 GLFW_KEY_RIGHT_SUPER :@ 347;
 GLFW_KEY_MENU :@ 348;
+GLFW_RELEASE :@ 0;
+GLFW_PRESS :@ 1;
+GLFW_REPEAT :@ 2;
 
 typedef GLFWwindow *u8;
+typedef key_callback_fn *(GLFWwindow, int, int, int, int) void;
+typedef framebuffer_size_callback_fn *(GLFWwindow, int, int) void;
 
 extern glfwInit :: () int;
 extern glfwWindowHint :: (hint int, value int);
@@ -232,3 +237,6 @@ extern glfwGetCursorPos :: (window GLFWwindow, xpos *f64, ypos *f64);
 extern glfwGetFramebufferSize :: (window GLFWwindow, width *int, height *int);
 extern glfwSetWindowUserPointer :: (window GLFWwindow, pointer ptr);
 extern glfwGetWindowUserPointer :: (window GLFWwindow) ptr;
+extern glfwSetWindowTitle :: (window GLFWwindow, title str);
+extern glfwSetFramebufferSizeCallback :: (window GLFWwindow, framebuffer_size_callback framebuffer_size_callback_fn);
+extern glfwSetKeyCallback :: (window GLFWwindow, key_callback key_callback_fn);
